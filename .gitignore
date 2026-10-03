@@ -1,0 +1,18 @@
+# Secrets
+.env
+
+# Run store, artifacts and generated data (anchored: breadcrumb/runs/ is source code)
+/runs/
+/sandbox/data/
+/harness/reports/
+
+# Python and tooling
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
