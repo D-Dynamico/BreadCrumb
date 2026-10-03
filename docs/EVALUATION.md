@@ -96,7 +96,9 @@ The panel will assume a self-built sandbox is rigged. These rules are how we sho
 is not, and the README states them explicitly.
 
 1. Held-out tasks are written in Phase 1, before any prompt tuning, and frozen. Record
-   the commit hash where they were frozen. Never edit them afterwards.
+   the commit hash where they were frozen. Never edit them afterwards. **Frozen at
+   commit `8514499` (2026-10-04), before any agent code existed.** `FROZEN.sha256` in
+   `harness/tasks/heldout/` and a test enforce it.
 2. Prompts contain no vendor names, people, task names or trap descriptions. Enforced
    by the generality check in `uv run tasks lint`, with a deny-list built from the
    seed generator's whole name pools.

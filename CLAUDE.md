@@ -39,9 +39,8 @@ Tagline: *an AI worker that can be interrupted and still finish the job.*
 
 ## Where we are
 
-- Status: Phase 1 (sandbox) built on 2026-10-04; see the newest session note for
-  whether its exit criteria are recorded as met. Next is Phase 2 (bare agent) in
-  `docs/PHASES.md`. Model: Gemini 3.1 Flash Lite (D23).
+- Status: Phase 1 (sandbox) done on 2026-10-04; held-out tasks frozen at `8514499`.
+  Next is Phase 2 (bare agent) in `docs/PHASES.md`. Model: Gemini 3.1 Flash Lite (D23).
 - Timebox: about 7 days of build. The cut line is in `docs/PHASES.md`. Respect it.
 - The full brief and evaluation criteria are in `docs/PROBLEM.md`.
 
