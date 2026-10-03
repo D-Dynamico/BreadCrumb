@@ -39,9 +39,11 @@ Tagline: *an AI worker that can be interrupted and still finish the job.*
 
 ## Where we are
 
-- Status: Phase 2 (bare agent, happy path) done on 2026-10-04: family 1 passed 3 of 3
-  oracle-scored runs. Next is Phase 3 (durability) in `docs/PHASES.md`. Held-out tasks
-  frozen at `8514499`. Model: Gemini 3.1 Flash Lite (D23).
+- Status: Phase 3 (durability) done on 2026-10-04: family 1 crashed at each of
+  `before_intended`, `after_intended` and `after_dispatch`, resumed, and passed the
+  oracle with exactly one payable and one message. Next is Phase 4 (contract,
+  verifier, safety, faults) in `docs/PHASES.md`. Held-out tasks frozen at `8514499`.
+  Model: Gemini 3.1 Flash Lite (D23).
 - Timebox: about 7 days of build. The cut line is in `docs/PHASES.md`. Respect it.
 - The full brief and evaluation criteria are in `docs/PROBLEM.md`.
 
