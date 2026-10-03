@@ -1,0 +1,13 @@
+{% for p in rows %}
+<tr>
+  <td><a href="/payables/{{ p.id }}">{{ p.ref }}</a></td>
+  <td>{{ p.vendor_name }}</td>
+  <td>{{ p.invoice_no }}</td>
+  <td>{{ p.invoice_date }}</td>
+  <td>{{ p.due_date }}</td>
+  <td class="num">{{ p.amount_paise | inr }}</td>
+  <td><span class="status {{ p.status }}">{{ p.status.replace("_", " ") }}</span></td>
+</tr>
+{% else %}
+<tr><td colspan="7">No payables match.</td></tr>
+{% endfor %}

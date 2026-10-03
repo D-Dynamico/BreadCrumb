@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<h1>Sign in to Acme Mail</h1>
+{% if error %}<div class="errors" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="/login" class="stack">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="username">Email address</label>
+  <input id="username" name="username" type="email" autocomplete="username" value="{{ username or '' }}" style="width:380px">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" style="width:380px">
+  <p><button class="btn" type="submit">Sign in</button></p>
+</form>
+{% endblock %}

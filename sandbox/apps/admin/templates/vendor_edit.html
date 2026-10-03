@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "macros.html" import field, error_summary %}
+{% block title %}Edit {{ v.name }}{% endblock %}
+{% block content %}
+<h1>Edit vendor: {{ v.name }}</h1>
+{{ error_summary(errors) }}
+<form method="post" action="/vendors/{{ v.id }}/edit" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {{ field("contact_email", "Contact email", values, errors) }}
+  {{ field("address", "Address", values, errors) }}
+  {{ field("bank_name", "Bank name", values, errors) }}
+  {{ field("bank_account", "Account number", values, errors) }}
+  {{ field("bank_ifsc", "IFSC", values, errors) }}
+  <p><button class="btn" type="submit">Save vendor</button> <a href="/vendors/{{ v.id }}">Cancel</a></p>
+</form>
+{% endblock %}

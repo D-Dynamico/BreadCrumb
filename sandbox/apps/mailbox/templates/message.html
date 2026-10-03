@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ m.subject }}{% endblock %}
+{% block content %}
+<h1>{{ m.subject }}</h1>
+<div class="meta">
+  <div>From: {{ m.from_name }} &lt;{{ m.from_addr }}&gt;</div>
+  <div>To: {{ m.to_addr }}</div>
+  <div>Date: {{ m.sent_at }}</div>
+</div>
+<div class="body">{{ m.body }}</div>
+{% if attachments %}
+<h2>Attachments</h2>
+<ul>
+  {% for a in attachments %}<li><a href="/attachments/{{ a.id }}" download>{{ a.filename }}</a></li>{% endfor %}
+</ul>
+{% endif %}
+<p><a href="/{{ m.folder }}">Back to {{ m.folder }}</a></p>
+{% endblock %}

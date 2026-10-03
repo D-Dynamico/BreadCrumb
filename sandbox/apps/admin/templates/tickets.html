@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+{% block content %}
+<h1>Tickets</h1>
+<p><a class="btn" href="/tickets/new">New ticket</a></p>
+<form method="get" action="/tickets" class="toolbar" role="search">
+  <div><label for="q">Search tickets</label><br><input id="q" name="q" type="search" value="{{ q }}"></div>
+  <div><label for="status">Status</label><br>
+    <select id="status" name="status">
+      <option value="" {% if not status %}selected{% endif %}>Any</option>
+      <option value="open" {% if status == "open" %}selected{% endif %}>open</option>
+      <option value="closed" {% if status == "closed" %}selected{% endif %}>closed</option>
+    </select></div>
+  <button class="btn secondary" type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>Reference</th><th>Title</th><th>Category</th><th>Requester</th><th>Assignee</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for t in rows %}
+  <tr><td><a href="/tickets/{{ t.id }}">{{ t.ref }}</a></td><td>{{ t.title }}</td><td>{{ t.category }}</td><td>{{ t.requester }}</td><td>{{ t.assignee }}</td><td>{{ t.status }}</td></tr>
+  {% else %}<tr><td colspan="6">No tickets match.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

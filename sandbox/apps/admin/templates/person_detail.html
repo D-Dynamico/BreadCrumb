@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ e.full_name }}{% endblock %}
+{% block content %}
+{% if saved %}<div class="notice" role="status">Employee {{ e.ref }} added.</div>{% endif %}
+<h1>{{ e.full_name }}</h1>
+<dl class="facts">
+  <dt>Reference</dt><dd>{{ e.ref }}</dd>
+  <dt>Work email</dt><dd>{{ e.work_email }}</dd>
+  <dt>Title</dt><dd>{{ e.title }}</dd>
+  <dt>Department</dt><dd>{{ e.department }}</dd>
+  <dt>Manager</dt><dd>{{ e.manager_name or "None" }}</dd>
+  <dt>Start date</dt><dd>{{ e.start_date }}</dd>
+  <dt>Status</dt><dd>{{ e.status }}</dd>
+</dl>
+<p><a href="/people">Back to people</a></p>
+{% endblock %}

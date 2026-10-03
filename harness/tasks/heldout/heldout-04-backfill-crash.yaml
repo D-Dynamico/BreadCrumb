@@ -1,0 +1,41 @@
+id: heldout-backfill-crash
+family: 3
+seed: null
+faults: none
+crash_points: ["mid_batch:2"]
+expected_escalation: none
+prompt: >-
+  Some of {{ vendors.backfill_b.name }}'s invoices on SupplierHub never made it into
+  Admin. Please enter the missing ones and tell me which ones you added.
+expected_end_state:
+  records:
+{% for inv in backfill.b.missing %}
+    - source: payables
+      match:
+        vendor_name: "{{ inv.vendor_name }}"
+        invoice_no: "{{ inv.invoice_no }}"
+      count: 1
+      fields:
+        amount: "{{ inv.amount }}"
+        invoice_date: "{{ inv.invoice_date }}"
+        due_date: "{{ inv.due_date }}"
+{% endfor %}
+{% for inv in backfill.b.in_admin %}
+    - source: payables
+      match:
+        vendor_name: "{{ inv.vendor_name }}"
+        invoice_no: "{{ inv.invoice_no }}"
+      count: 1
+{% endfor %}
+  messages:
+    - kind: team_message
+      to: "{{ requester.channel }}"
+      count: 1
+      must_contain:
+{% for inv in backfill.b.missing %}
+        - "{{ inv.invoice_no }}"
+{% endfor %}
+notes: >-
+  Batch backfill with the worker killed after two of the missing invoices. Resume must
+  finish the rest with no duplicates. One missing invoice is listed twice on the
+  portal and must be entered once; the ones already in Admin must not be entered again.

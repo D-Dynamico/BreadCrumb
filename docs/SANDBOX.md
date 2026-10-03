@@ -31,7 +31,7 @@ Acme's webmail for the requester's shared ops inbox.
 
 ### Vendor Portal (port 8102)
 
-An "external" vendor billing site with its own look and its own login.
+"SupplierHub", an "external" vendor billing site with its own look and its own login.
 
 - Login with a sandbox vendor-portal account.
 - Invoice list per customer (Acme), invoice detail page, PDF download.
@@ -45,7 +45,7 @@ The internal system. Three modules sharing one login.
 | Module | Entities | Notable behavior |
 |---|---|---|
 | Payables | Vendors (with contact and bank details), purchase orders, payables | Validation (amount positive, due date not in the past). **No duplicate check on invoice numbers**, like many real systems, so entering the same invoice twice creates two payables. Payables above ₹1,00,000 go to `pending_approval`; approving requires a different role the worker does not have |
-| People | Employees, onboarding records | Creating an employee needs name, email, role, start date, manager |
+| People | Employees (a new hire's record has status `onboarding` until their start date) | Creating an employee needs full name, an `@acme.test` work email, job title, department, start date and manager. No uniqueness check on email, consistent with D17 |
 | Tickets | IT and support tickets | Create, assign, comment, close |
 
 **Partial REST API with an OpenAPI spec.** Covers reading vendors, payables and
@@ -70,8 +70,17 @@ worker posts updates for the requester. Readable by the verifier and the oracle.
 ## Seed data
 
 - Generated from a seed number by `uv run tasks seed --seed <n>`.
-- Names come from fixed name pools in `sandbox/seed/name_pools.json` (a JSON object of
-  lists: vendors, people, companies), which the seed generator reads.
+- Names come from fixed name pools in `sandbox/seed/name_pools.json` (vendors,
+  look-alike vendor pairs, people, banks), which the seed generator reads. The
+  generality check denies every pool name and its first word in agent code and prompts.
+- The seed date is today unless pinned with `--today`. Invoice and due dates are
+  relative to it. Recent invoices are always due at least 10 days out, so any task that
+  asks to enter one is possible on the day it is seeded. Reseed before a run on a
+  later day.
+- **Roles.** The generator writes `sandbox/data/scenario.json`, which names every role
+  tasks refer to (the target vendor, the look-alike pair, each trap, the two new hires,
+  the backfill batches) plus the highest row id per table at seed time (`baseline`).
+  Only the harness reads it, through the oracle. Seeding writes no audit rows.
   The generality check builds its deny-list from these whole pools, so no name any
   seed could produce may appear in agent code or prompts.
 - Invoice PDFs are generated at seed time with a real text layer. Fields: vendor,
@@ -113,10 +122,24 @@ the client sees a login page, because that is the realistic "maybe committed" ca
 
 - A read-only service over `sandbox.db` that returns ground-truth state for scoring:
   records by natural key, record counts, sent messages, field histories (from the
-  audit table).
+  audit table). Endpoints: `GET /records/<source>?column=value&after_id=N` (sources:
+  payables, vendors, employees, tickets, ticket_comments, team_messages, sent_email,
+  outbound_email, portal_invoices, purchase_orders, audit_log) and `GET /scenario`.
+  It opens the database read-only, has no write routes, and never exposes logins.
 - Bound to localhost, URL only in harness config, never in agent config or prompts.
 - The agent's verifier never uses it. If an agent code path ever references the oracle,
   that is a bug (enforced by the generality and boundary check in lint).
+
+## Realism details (not rigging)
+
+- Each app has its own session cookie name, because browsers share cookies across
+  ports on one host. Sessions are stored server side.
+- Forms carry a CSRF token, as real web apps do. The agent fills forms through the
+  browser, so it sees and submits the token like a person would.
+- All reads, including search and HTMX partials, are GET; opening an email does not
+  mark it read. Writes are POST.
+- Validation errors appear next to the field and in a summary with `role="alert"`, and
+  saved records show a confirmation with the new reference (for example `PAY-1014`).
 
 ## Credentials
 

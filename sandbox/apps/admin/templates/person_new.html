@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "macros.html" import field, select_error, error_summary %}
+{% block title %}Add employee{% endblock %}
+{% block content %}
+<h1>Add employee</h1>
+{{ error_summary(errors) }}
+<form method="post" action="/people" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {{ field("full_name", "Full name", values, errors) }}
+  {{ field("work_email", "Work email", values, errors, type="email") }}
+  {{ field("title", "Job title", values, errors) }}
+  <label for="department">Department</label>
+  <select id="department" name="department">
+    <option value="">Choose a department</option>
+    {% for d in departments %}<option value="{{ d }}" {% if values.get('department') == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+  </select>
+  {{ select_error("department", errors) }}
+  {{ field("start_date", "Start date", values, errors, type="date") }}
+  <label for="manager_id">Manager</label>
+  <select id="manager_id" name="manager_id">
+    <option value="">Choose a manager</option>
+    {% for m in managers %}<option value="{{ m.id }}" {% if values.get('manager_id') == m.id|string %}selected{% endif %}>{{ m.full_name }} ({{ m.title }})</option>{% endfor %}
+  </select>
+  {{ select_error("manager_id", errors) }}
+  <p><button class="btn" type="submit">Add employee</button> <a href="/people">Cancel</a></p>
+</form>
+{% endblock %}

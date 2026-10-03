@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Payables{% endblock %}
+{% block content %}
+<h1>Payables</h1>
+<p><a class="btn" href="/payables/new">New payable</a></p>
+<form method="get" action="/payables" class="toolbar" role="search">
+  <div>
+    <label for="q">Search vendor, invoice number or reference</label><br>
+    <input id="q" name="q" type="search" value="{{ q }}"
+      hx-get="/payables" hx-trigger="keyup changed delay:300ms" hx-target="#payable-rows" hx-include="#status">
+  </div>
+  <div>
+    <label for="status">Status</label><br>
+    <select id="status" name="status">
+      <option value="" {% if not status %}selected{% endif %}>Any</option>
+      {% for s in ["entered", "pending_approval", "approved"] %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s.replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn secondary" type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>Reference</th><th>Vendor</th><th>Invoice no.</th><th>Invoice date</th><th>Due date</th><th class="num">Amount (₹)</th><th>Status</th></tr></thead>
+  <tbody id="payable-rows">{% include "payables_rows.html" %}</tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}{{ app_title }}{% endblock %} · Acme Admin</title>
+<script src="/static/htmx.min.js" defer></script>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; color: #1d2733; background: #f4f6f8; }
+  header { background: #1f3a5f; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 28px; }
+  header .brand { font-weight: 700; font-size: 18px; padding: 14px 0; }
+  header nav a { color: #dce6f2; text-decoration: none; margin-right: 18px; }
+  header nav a:hover { color: #fff; }
+  header .who { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  header .who button { background: none; border: 1px solid #8aa4c4; color: #fff; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  main { max-width: 1100px; margin: 24px auto; background: #fff; padding: 24px 32px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e8ee; }
+  th { background: #f0f3f7; font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  form.stack label { display: block; margin-top: 14px; font-weight: 600; }
+  form.stack input, form.stack select, form.stack textarea { display: block; margin-top: 4px; padding: 7px; width: 360px; border: 1px solid #b8c2cc; border-radius: 4px; font: inherit; }
+  form.stack textarea { width: 520px; height: 90px; }
+  .field-error { color: #b42318; font-size: 14px; margin-top: 4px; }
+  .errors { background: #fef3f2; border: 1px solid #fda29b; padding: 10px 14px; border-radius: 4px; }
+  .notice { background: #ecfdf3; border: 1px solid #75e0a7; padding: 10px 14px; border-radius: 4px; }
+  .warn { background: #fffaeb; border: 1px solid #fec84b; padding: 10px 14px; border-radius: 4px; }
+  .btn { background: #1f6feb; color: #fff; border: 0; padding: 8px 16px; border-radius: 4px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn.secondary { background: #eef2f6; color: #1d2733; border: 1px solid #c4ccd5; }
+  .toolbar { display: flex; gap: 12px; align-items: end; margin: 8px 0; }
+  .toolbar label { font-size: 14px; }
+  .toolbar input, .toolbar select { padding: 6px; }
+  dl.facts { display: grid; grid-template-columns: 200px 1fr; gap: 6px 16px; }
+  dl.facts dt { font-weight: 600; color: #4a5866; }
+  .status { padding: 2px 8px; border-radius: 10px; font-size: 13px; background: #eef2f6; }
+  .status.pending_approval { background: #fffaeb; }
+  .status.approved { background: #ecfdf3; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Acme Admin</span>
+  {% if current_user %}
+  <nav aria-label="Main">
+    <a href="/payables">Payables</a>
+    <a href="/vendors">Vendors</a>
+    <a href="/purchase-orders">Purchase orders</a>
+    <a href="/people">People</a>
+    <a href="/tickets">Tickets</a>
+    <a href="/messages">Team messages</a>
+  </nav>
+  <div class="who">
+    <span>Signed in as {{ current_user }}</span>
+    <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+  </div>
+  {% endif %}
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -203,5 +203,5 @@ What the user gets at the end:
 - Observed content is always wrapped and labelled as untrusted data.
 - **Must not mention** specific vendors, people, task names or traps. Enforced by the
   generality check in `uv run tasks lint` against a deny-list built from the seed
-  generator's name pools (every vendor, person and company name any seed can produce)
-  and the task files, not from one seed's output.
+  generator's name pools (every vendor, person and bank name any seed can produce, and
+  each name's first word) and the task ids, not from one seed's output.

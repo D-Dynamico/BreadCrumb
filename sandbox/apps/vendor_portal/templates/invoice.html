@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.invoice_no }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Invoice {{ inv.invoice_no }}</h1>
+  <dl>
+    <dt>Listing</dt><dd>{{ inv.listing_ref }}</dd>
+    <dt>Supplier</dt><dd>{{ inv.vendor_name }}</dd>
+    <dt>Billed to</dt><dd>{{ inv.customer }}</dd>
+    <dt>Invoice date</dt><dd>{{ inv.invoice_date }}</dd>
+    <dt>Due date</dt><dd>{{ inv.due_date }}</dd>
+    <dt>Total</dt><dd>INR {{ inv.total_paise | inr }}</dd>
+    <dt>Status</dt><dd><span class="pill {{ inv.status }}">{{ inv.status }}</span></dd>
+  </dl>
+  <p><a href="/invoices/{{ inv.listing_ref }}/pdf" download>Download invoice PDF</a></p>
+  <p><a href="/invoices">Back to all invoices</a></p>
+</div>
+{% endblock %}

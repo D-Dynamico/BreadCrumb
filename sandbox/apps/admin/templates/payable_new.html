@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "macros.html" import field, select_error, error_summary %}
+{% block title %}New payable{% endblock %}
+{% block content %}
+<h1>New payable</h1>
+{{ error_summary(errors) }}
+<form method="post" action="/payables" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="vendor_id">Vendor</label>
+  <select id="vendor_id" name="vendor_id" {% if errors.get('vendor_id') %}aria-invalid="true" aria-describedby="vendor_id-error"{% endif %}>
+    <option value="">Choose a vendor</option>
+    {% for v in vendors %}
+    <option value="{{ v.id }}" {% if values.get('vendor_id') == v.id|string %}selected{% endif %}>{{ v.name }}</option>
+    {% endfor %}
+  </select>
+  {{ select_error("vendor_id", errors) }}
+  {{ field("invoice_no", "Invoice number", values, errors) }}
+  {{ field("invoice_date", "Invoice date", values, errors, type="date") }}
+  {{ field("due_date", "Due date", values, errors, type="date") }}
+  {{ field("amount", "Amount (₹, including tax)", values, errors) }}
+  {{ field("po_number", "PO number (optional)", values, errors) }}
+  <label for="notes">Notes (optional)</label>
+  <textarea id="notes" name="notes">{{ values.get('notes', '') }}</textarea>
+  <p><button class="btn" type="submit">Save payable</button> <a href="/payables">Cancel</a></p>
+</form>
+{% endblock %}

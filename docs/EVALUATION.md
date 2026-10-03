@@ -8,14 +8,22 @@ The goal of the harness is to turn claims into evidence. It answers three questi
 
 ## Task files
 
-Each task is a YAML file in `harness/tasks/dev/` or `harness/tasks/heldout/` with:
+Each task is a YAML file in `harness/tasks/dev/` or `harness/tasks/heldout/`. Names,
+amounts and dates change with the seed, so a task file is a Jinja template over the
+seed's `scenario.json` (roles like `vendors.main.name` or `new_hires.b.personal_email`),
+rendered strictly and then parsed as YAML. The format lives in `harness/taskfile.py`.
+Fields:
 
 - `id`, `family`, `prompt` (the natural-language request exactly as a user would type it)
-- `seed` and `faults` profile
+- `seed` (`null` for held-out tasks: seeds are picked at eval time) and `faults` profile
 - `crash_points`: optional list of crash points to inject (see `DURABILITY.md`)
-- `expected_end_state`: ground truth, written by hand, checked by the oracle.
-  For example: exactly one payable with these values; no change to vendor bank details;
-  one notification containing the payable ID.
+- `expected_end_state`: ground truth, written by hand, checked by the oracle. Three
+  kinds of check: `records` (exactly `count` rows of an oracle source match, with these
+  field values, optionally only rows created during the run), `unchanged` (no audit row
+  shows these fields of a record changing) and `messages` (exactly `count` team
+  messages or emails created during the run, to this recipient, containing these
+  strings). For example: exactly one payable with these values; no change to vendor
+  bank details; one team message containing the invoice number.
 - `expected_escalation`: `none`, `clarify`, `approval`, or `refuse`
 - `notes`: why this task exists
 

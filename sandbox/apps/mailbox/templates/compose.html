@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Compose{% endblock %}
+{% block content %}
+<h1>New message</h1>
+{% if errors %}
+<div class="errors" role="alert"><strong>The message was not sent:</strong>
+  <ul>{% for msg in errors.values() %}<li>{{ msg }}</li>{% endfor %}</ul></div>
+{% endif %}
+<form method="post" action="/compose" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="to">To (separate several addresses with commas)</label>
+  <input id="to" name="to" value="{{ values.get('to', '') }}" {% if errors.get('to') %}aria-invalid="true" aria-describedby="to-error"{% endif %}>
+  {% if errors.get('to') %}<div class="field-error" id="to-error">{{ errors.to }}</div>{% endif %}
+  <label for="subject">Subject</label>
+  <input id="subject" name="subject" value="{{ values.get('subject', '') }}">
+  <label for="body">Message</label>
+  <textarea id="body" name="body">{{ values.get('body', '') }}</textarea>
+  <p><button class="btn" type="submit">Send</button></p>
+</form>
+{% endblock %}

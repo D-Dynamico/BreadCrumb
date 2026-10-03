@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.title() }}{% endblock %}
+{% block content %}
+{% if just_sent %}<div class="notice" role="status">Message sent.</div>{% endif %}
+<h1>{{ folder.title() }}</h1>
+<form method="get" action="/{{ folder }}" role="search">
+  <label for="q">Search mail</label>
+  <input id="q" name="q" type="search" value="{{ q }}" style="width:360px;padding:6px"
+    hx-get="/{{ folder }}" hx-trigger="keyup changed delay:300ms" hx-target="#message-rows">
+  <button type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>{{ "To" if folder == "sent" else "From" }}</th><th>Subject</th><th>Attachments</th><th>Date</th></tr></thead>
+  <tbody id="message-rows">{% include "message_rows.html" %}</tbody>
+</table>
+{% endblock %}

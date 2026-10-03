@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Purchase orders{% endblock %}
+{% block content %}
+<h1>Purchase orders</h1>
+<table>
+  <thead><tr><th>PO number</th><th>Vendor</th><th class="num">Amount (₹)</th><th>Status</th><th>Created</th></tr></thead>
+  <tbody>
+  {% for po in rows %}
+  <tr><td>{{ po.po_number }}</td><td>{{ po.vendor_name }}</td><td class="num">{{ po.amount_paise | inr }}</td><td>{{ po.status }}</td><td>{{ po.created_on }}</td></tr>
+  {% else %}<tr><td colspan="5">No purchase orders.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Team messages{% endblock %}
+{% block content %}
+<h1>Team messages</h1>
+<nav aria-label="Channels">
+  {% for c in channels %}
+  <a href="/messages?channel={{ c }}" {% if c == channel %}aria-current="page" style="font-weight:700"{% endif %}>#{{ c }}</a>{% if not loop.last %} · {% endif %}
+  {% endfor %}
+</nav>
+{% if posted %}<div class="notice" role="status">Message posted.</div>{% endif %}
+<h2>#{{ channel }}</h2>
+<ol aria-label="Messages in #{{ channel }}" style="list-style:none;padding:0">
+  {% for m in rows %}
+  <li style="border-bottom:1px solid #e3e8ee;padding:8px 0"><strong>{{ m.author }}</strong> <small>{{ m.posted_at }}</small><div style="white-space: pre-wrap">{{ m.body }}</div></li>
+  {% else %}<li>No messages yet.</li>{% endfor %}
+</ol>
+<form method="post" action="/messages" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="channel" value="{{ channel }}">
+  <label for="body">Message to #{{ channel }}</label>
+  <textarea id="body" name="body"></textarea>
+  <p><button class="btn" type="submit">Post message</button></p>
+</form>
+{% endblock %}

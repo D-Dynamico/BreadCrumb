@@ -1,0 +1,19 @@
+{% macro field(name, label, values, errors, type="text") -%}
+<label for="{{ name }}">{{ label }}</label>
+<input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ values.get(name, '') }}"
+  {% if errors.get(name) %}aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+{% if errors.get(name) %}<div class="field-error" id="{{ name }}-error">{{ errors[name] }}</div>{% endif %}
+{%- endmacro %}
+
+{% macro select_error(name, errors) -%}
+{% if errors.get(name) %}<div class="field-error" id="{{ name }}-error">{{ errors[name] }}</div>{% endif %}
+{%- endmacro %}
+
+{% macro error_summary(errors) -%}
+{% if errors %}
+<div class="errors" role="alert">
+  <strong>Please fix the following:</strong>
+  <ul>{% for msg in errors.values() %}<li>{{ msg }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{%- endmacro %}

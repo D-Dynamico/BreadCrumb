@@ -8,7 +8,9 @@ Enforces three ground rules from CLAUDE.md on the agent code and prompts:
 3. Nothing in the agent refers to the oracle (its name, port or config key).
 
 The deny-list comes from whole name pools, not one seed's output, so names that
-only appear under other seeds (as in held-out runs) are caught too.
+only appear under other seeds (as in held-out runs) are caught too. Each name's
+first word is denied as well, since people write "the Northwind invoice", not the
+full company name.
 """
 
 from __future__ import annotations
@@ -17,10 +19,10 @@ import ast
 import json
 import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-
-import yaml
+from typing import Any
 
 AGENT_DIRS = ("breadcrumb", "prompts")
 FORBIDDEN_IMPORTS = ("sandbox", "harness")
@@ -41,19 +43,33 @@ class Violation:
         return f"{self.path.as_posix()}:{self.line}: [{self.rule}] {self.detail}"
 
 
+_TASK_ID = re.compile(r"^id:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def _strings(value: Any) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list | dict):
+        for item in value.values() if isinstance(value, dict) else value:
+            yield from _strings(item)
+
+
 def load_deny_terms(root: Path) -> list[str]:
-    """Every name any seed could produce, plus every task id."""
+    """Every name any seed could produce, its first word, and every task id.
+
+    Task files are templates, so their ids are read with a pattern, not as YAML.
+    """
     terms: set[str] = set()
     pools_path = root / NAME_POOLS_FILE
     if pools_path.exists():
-        pools = json.loads(pools_path.read_text(encoding="utf-8"))
-        for names in pools.values():
-            terms.update(str(name) for name in names)
+        for name in _strings(json.loads(pools_path.read_text(encoding="utf-8"))):
+            terms.add(name)
+            terms.add(name.split()[0])
     for task_dir in TASK_DIRS:
         for task_file in sorted((root / task_dir).glob("*.y*ml")):
-            task = yaml.safe_load(task_file.read_text(encoding="utf-8")) or {}
-            if task.get("id"):
-                terms.add(str(task["id"]))
+            found = _TASK_ID.search(task_file.read_text(encoding="utf-8"))
+            if found:
+                terms.add(found.group(1))
     return sorted(t for t in terms if t.strip())
 
 

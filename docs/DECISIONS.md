@@ -213,11 +213,55 @@ window. A lite model keeps the agent honest about its design: the contract, gate
 and verifier have to carry reliability, not a large model.
 
 **Risk.** Free-tier limits are per project and only shown in AI Studio, not in the
-docs. A run is tens of model calls and the eval is hundreds, so requests per day may
-be the real constraint. The dev cache (D15) matters more, and the held-out repeats in
-the cut line may need to drop sooner. Check the AI Studio limits before Phase 2.
+docs. As shown in AI Studio on 2026-10-04: 15 requests per minute, 250K tokens per
+minute, 500 requests per day. A run is about 30 to 45 calls, so about 12 runs a day.
+That is plenty for development with the dev cache (D15), but the planned evaluation
+(about 75 runs) needs several days of quota. Consequences: the model client must pace
+itself under 15 requests per minute and back off on rate-limit errors, and step
+prompts should stay under about 15K tokens. How to fit the evaluation (spread over
+days, a paid day, or fewer repeats) is open.
 
 **Rejected.** Anthropic API (paid). Groq free tier (very fast, but tokens-per-minute
 caps clash with large page snapshots, and open-weight models are weaker at long
 tool-calling chains). Gemini 3.8 Flash (stronger, but the free tier showed only 20
 requests per day).
+
+### D24. Task files are templates over the seeded scenario (2026-10-04)
+
+**Decision.** The seed generator writes `scenario.json`, naming every role a task refers
+to (target vendor, look-alike pair, traps, new hires, backfill batches). Task files are
+Jinja templates over it, rendered strictly, then parsed as YAML. Held-out tasks have
+`seed: null`; the harness picks seeds at eval time. Only the harness reads the
+scenario, through the oracle's `/scenario` endpoint.
+
+**Why.** Names, amounts and dates must vary by seed so nothing can be memorized, but a
+task like "enter the latest invoice from Northwind" has to name a real vendor. Roles
+keep the request and its ground truth in step under any seed. Strict rendering means a
+typo in a task fails loudly instead of producing an empty check.
+
+**Rejected.** Fixed names in task files (would tie tasks to one seed and invite
+overfitting); generating tasks in code (ground truth would no longer be hand-written).
+
+### D25. reportlab to make PDFs, pdfplumber to read them (2026-10-04)
+
+**Decision.** reportlab generates invoice and offer-letter PDFs with a real text layer.
+The scanned-style invoice is drawn with Pillow and embedded as an image only. The
+agent's files tool will use pdfplumber.
+
+**Why.** reportlab is the standard pure-Python PDF writer. pdfplumber returns text with
+positions, which gives the fact ledger page-and-line locators. Both work on Windows
+without system packages.
+
+**Rejected.** pypdf for reading (fewer layout details); OCR for the scanned invoice
+(D16: the worker should say it cannot read it, not guess).
+
+### D26. Realistic web app details in the sandbox (2026-10-04)
+
+**Decision.** Server-side sessions with one cookie name per app, CSRF tokens on forms,
+GET for every read (opening an email does not mark it read), POST for writes, plain
+validation messages beside fields with an alert summary, and a saved-record
+confirmation showing the new reference.
+
+**Why.** These are ordinary traits of internal web tools, so the agent faces what it
+would face at a real company, without anything added for its benefit (ground rule 7).
+GET-only reads are also what make the browser's network watch meaningful (D20).

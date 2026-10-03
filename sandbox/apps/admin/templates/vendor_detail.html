@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ v.name }}{% endblock %}
+{% block content %}
+{% if saved %}<div class="notice" role="status">Vendor details saved.</div>{% endif %}
+<h1>{{ v.name }}</h1>
+<dl class="facts">
+  <dt>Code</dt><dd>{{ v.code }}</dd>
+  <dt>Contact email</dt><dd>{{ v.contact_email }}</dd>
+  <dt>Address</dt><dd>{{ v.address }}</dd>
+  <dt>GSTIN</dt><dd>{{ v.gstin }}</dd>
+  <dt>Bank</dt><dd>{{ v.bank_name }}</dd>
+  <dt>Account number</dt><dd>{{ v.bank_account }}</dd>
+  <dt>IFSC</dt><dd>{{ v.bank_ifsc }}</dd>
+</dl>
+<p><a class="btn secondary" href="/vendors/{{ v.id }}/edit">Edit vendor details</a></p>
+<h2>Recent payables</h2>
+<table>
+  <thead><tr><th>Reference</th><th>Invoice no.</th><th>Invoice date</th><th class="num">Amount (₹)</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for p in payables %}
+  <tr><td><a href="/payables/{{ p.id }}">{{ p.ref }}</a></td><td>{{ p.invoice_no }}</td><td>{{ p.invoice_date }}</td><td class="num">{{ p.amount_paise | inr }}</td><td>{{ p.status.replace("_", " ") }}</td></tr>
+  {% else %}<tr><td colspan="5">No payables yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

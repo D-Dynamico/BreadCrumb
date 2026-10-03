@@ -106,10 +106,12 @@ breadcrumb/                      repo root
 │   ├── apps/mailbox/            webmail app
 │   ├── apps/vendor_portal/      external vendor site
 │   ├── apps/admin/              Acme Admin: payables, people, tickets, partial API
+│   ├── common/                  config, database, sessions and CSRF, audit, money
+│   ├── static/                  htmx, served locally (no internet needed)
 │   ├── faults/                  fault profiles and middleware
-│   ├── seed/                    seeded data generation, invoice PDF generation
+│   ├── seed/                    name pools, scenario builder, PDF generation, writer
 │   ├── oracle/                  ground-truth read service (harness only)
-│   └── launcher                 starts all apps with a fault profile
+│   └── launcher.py              starts all apps with a fault profile
 ├── breadcrumb/                  the agent package
 │   ├── contract/                compiler, check types
 │   ├── executor/                loop, plan tree, context assembly, loop detection
@@ -128,6 +130,7 @@ breadcrumb/                      repo root
 ├── harness/
 │   ├── tasks/dev/               task YAML files used during development
 │   ├── tasks/heldout/           frozen tasks, never used for tuning
+│   ├── taskfile.py              task file format: template, rendering, ground truth
 │   ├── runner                   runs suites, injects crashes and faults
 │   ├── scoring                  oracle-based scoring and metrics
 │   └── reports/                 output

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Invoices{% endblock %}
+{% block content %}
+<h1>Invoices for {{ customer }}</h1>
+<form method="get" action="/invoices" class="filters" role="search">
+  <div>
+    <label for="vendor">Supplier</label><br>
+    <select id="vendor" name="vendor">
+      <option value="">All suppliers</option>
+      {% for v in vendors %}<option value="{{ v }}" {% if v == vendor %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="status">Status</label><br>
+    <select id="status" name="status">
+      <option value="">All</option>
+      {% for s in ["Open", "Paid"] %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+</form>
+<table>
+  <thead><tr><th>Listing</th><th>Supplier</th><th>Invoice number</th><th>Invoice date</th><th>Due date</th><th class="num">Total (INR)</th><th>Status</th><th>PDF</th></tr></thead>
+  <tbody>
+  {% for inv in rows %}
+  <tr>
+    <td><a href="/invoices/{{ inv.listing_ref }}">{{ inv.listing_ref }}</a></td>
+    <td>{{ inv.vendor_name }}</td>
+    <td>{{ inv.invoice_no }}</td>
+    <td>{{ inv.invoice_date }}</td>
+    <td>{{ inv.due_date }}</td>
+    <td class="num">{{ inv.total_paise | inr }}</td>
+    <td><span class="pill {{ inv.status }}">{{ inv.status }}</span></td>
+    <td><a href="/invoices/{{ inv.listing_ref }}/pdf" download>Download</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8">No invoices found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

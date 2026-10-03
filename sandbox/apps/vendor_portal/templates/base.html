@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}Invoices{% endblock %} | SupplierHub</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; margin: 0; background: #faf7f2; color: #2b2622; }
+  .bar { background: #0f5132; color: #f1efe9; padding: 14px 32px; display: flex; align-items: center; }
+  .bar .logo { font-size: 22px; letter-spacing: 1px; }
+  .bar .logo b { color: #ffd166; }
+  .bar .acct { margin-left: auto; font-family: Arial, sans-serif; font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .bar .acct button { background: #ffd166; border: 0; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  .content { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; font-family: Arial, sans-serif; font-size: 14px; }
+  th { background: #e9e4da; text-align: left; padding: 10px; }
+  td { padding: 10px; border-top: 1px solid #e9e4da; }
+  td.num, th.num { text-align: right; }
+  .filters { font-family: Arial, sans-serif; font-size: 14px; margin-bottom: 14px; display: flex; gap: 14px; align-items: end; }
+  .filters select { padding: 5px; }
+  .card { background: #fff; padding: 24px; border: 1px solid #e9e4da; font-family: Arial, sans-serif; }
+  .card dl { display: grid; grid-template-columns: 180px 1fr; gap: 8px; }
+  .card dt { color: #6b625a; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 8px; background: #e9e4da; }
+  .pill.Open { background: #fff3cd; }
+  .pill.Paid { background: #d1e7dd; }
+  .login { max-width: 380px; margin: 60px auto; background: #fff; padding: 28px; border: 1px solid #e9e4da; font-family: Arial, sans-serif; }
+  .login label { display: block; margin-top: 12px; font-size: 14px; }
+  .login input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+  .go { background: #0f5132; color: #fff; border: 0; padding: 9px 18px; margin-top: 16px; cursor: pointer; }
+  .errors { background: #f8d7da; padding: 10px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="logo">Supplier<b>Hub</b></span>
+  {% if current_user %}
+  <div class="acct">
+    <span>Customer account: {{ current_user }}</span>
+    <form method="post" action="/logout"><button type="submit">Log out</button></form>
+  </div>
+  {% endif %}
+</div>
+<div class="content">{% block content %}{% endblock %}</div>
+</body>
+</html>

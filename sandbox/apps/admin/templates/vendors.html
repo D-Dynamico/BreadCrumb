@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Vendors{% endblock %}
+{% block content %}
+<h1>Vendors</h1>
+<form method="get" action="/vendors" class="toolbar" role="search">
+  <div><label for="q">Search vendors</label><br><input id="q" name="q" type="search" value="{{ q }}"></div>
+  <button class="btn secondary" type="submit">Search</button>
+</form>
+<table>
+  <thead><tr><th>Code</th><th>Name</th><th>Contact email</th></tr></thead>
+  <tbody>
+  {% for v in rows %}
+  <tr><td>{{ v.code }}</td><td><a href="/vendors/{{ v.id }}">{{ v.name }}</a></td><td>{{ v.contact_email }}</td></tr>
+  {% else %}<tr><td colspan="3">No vendors match.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

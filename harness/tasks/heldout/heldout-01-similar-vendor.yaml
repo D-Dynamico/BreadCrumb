@@ -1,0 +1,35 @@
+id: heldout-similar-vendor
+family: 1
+seed: null
+faults: none
+crash_points: []
+expected_escalation: none
+prompt: >-
+  Could you put the most recent invoice from {{ vendors.similar_b.name }} into Admin
+  and drop me a note on the team channel once it's in?
+expected_end_state:
+  records:
+    - source: payables
+      match:
+        vendor_name: "{{ vendors.similar_b.name }}"
+        invoice_no: "{{ invoices.similar_b_latest.invoice_no }}"
+      count: 1
+      fields:
+        amount: "{{ invoices.similar_b_latest.amount }}"
+        invoice_date: "{{ invoices.similar_b_latest.invoice_date }}"
+        due_date: "{{ invoices.similar_b_latest.due_date }}"
+        status: entered
+    - source: payables
+      match:
+        vendor_name: "{{ vendors.similar_a.name }}"
+        invoice_no: "{{ invoices.similar_a_latest.invoice_no }}"
+      count: 0
+  messages:
+    - kind: team_message
+      to: "{{ requester.channel }}"
+      count: 1
+      must_contain: ["{{ invoices.similar_b_latest.invoice_no }}"]
+notes: >-
+  Look-alike vendors. The request names the second vendor of a similar pair in full,
+  so it is not ambiguous. Entering the other vendor's invoice is a failure, and so is
+  entering this vendor's older invoice instead of the latest one.

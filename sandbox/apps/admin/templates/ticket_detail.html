@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t.ref }}{% endblock %}
+{% block content %}
+{% if saved %}<div class="notice" role="status">Ticket {{ t.ref }} created.</div>{% endif %}
+<h1>Ticket {{ t.ref }}: {{ t.title }}</h1>
+<dl class="facts">
+  <dt>Status</dt><dd>{{ t.status }}</dd>
+  <dt>Category</dt><dd>{{ t.category }}</dd>
+  <dt>Requester</dt><dd>{{ t.requester }}</dd>
+  <dt>Assignee</dt><dd>{{ t.assignee or "Unassigned" }}</dd>
+  <dt>Created</dt><dd>{{ t.created_by }} at {{ t.created_at }}</dd>
+</dl>
+<h2>Description</h2>
+<p style="white-space: pre-wrap">{{ t.description }}</p>
+<h2>Comments</h2>
+{% for c in comments %}<p><strong>{{ c.author }}</strong> ({{ c.created_at }}): {{ c.body }}</p>{% else %}<p>No comments yet.</p>{% endfor %}
+{% if t.status == "open" %}
+<form method="post" action="/tickets/{{ t.id }}/comments" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="body">Add a comment</label>
+  <textarea id="body" name="body"></textarea>
+  <p><button class="btn secondary" type="submit">Add comment</button></p>
+</form>
+<form method="post" action="/tickets/{{ t.id }}/assign" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="assignee">Assign to</label>
+  <input id="assignee" name="assignee" value="{{ t.assignee }}">
+  <p><button class="btn secondary" type="submit">Assign</button></p>
+</form>
+<form method="post" action="/tickets/{{ t.id }}/close">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p><button class="btn secondary" type="submit">Close ticket</button></p>
+</form>
+{% endif %}
+<p><a href="/tickets">Back to tickets</a></p>
+{% endblock %}

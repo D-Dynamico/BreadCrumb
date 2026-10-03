@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "macros.html" import field, select_error, error_summary %}
+{% block title %}New ticket{% endblock %}
+{% block content %}
+<h1>New ticket</h1>
+{{ error_summary(errors) }}
+<form method="post" action="/tickets" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {{ field("title", "Title", values, errors) }}
+  <label for="description">Description</label>
+  <textarea id="description" name="description">{{ values.get('description', '') }}</textarea>
+  {{ select_error("description", errors) }}
+  <label for="category">Category</label>
+  <select id="category" name="category">
+    <option value="">Choose a category</option>
+    {% for c in categories %}<option value="{{ c }}" {% if values.get('category') == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+  </select>
+  {{ select_error("category", errors) }}
+  {{ field("requester", "Requester", values, errors) }}
+  {{ field("assignee", "Assignee (optional)", values, errors) }}
+  <p><button class="btn" type="submit">Create ticket</button> <a href="/tickets">Cancel</a></p>
+</form>
+{% endblock %}

@@ -47,7 +47,7 @@ def test_task_id_in_code_is_caught(tmp_path: Path) -> None:
 
 def test_names_match_whole_words_only(tmp_path: Path) -> None:
     _with_pools(tmp_path)
-    _write(tmp_path, "breadcrumb/loop.py", "RAVI_MENONS = 1  # Ravi Menonx is not a pool name\n")
+    _write(tmp_path, "breadcrumb/loop.py", "RAVIS = 1  # Globexx and Menonx are not pool names\n")
     assert check(tmp_path) == []
 
 
@@ -64,7 +64,26 @@ def test_oracle_reference_is_caught(tmp_path: Path) -> None:
 
 def test_deny_terms_come_from_whole_pools_and_task_ids(tmp_path: Path) -> None:
     _with_pools(tmp_path)
-    assert load_deny_terms(tmp_path) == ["Globex Supplies", "Ravi Menon", "invoice-happy-path"]
+    assert load_deny_terms(tmp_path) == [
+        "Globex",
+        "Globex Supplies",
+        "Ravi",
+        "Ravi Menon",
+        "invoice-happy-path",
+    ]
+
+
+def test_nested_pools_and_first_words_are_denied(tmp_path: Path) -> None:
+    pools = {"pairs": [["Northwind Traders", "Northwind Trading Co."]]}
+    _write(tmp_path, "sandbox/seed/name_pools.json", json.dumps(pools))
+    _write(tmp_path, "prompts/executor.txt", "Enter the Northwind invoice.\n")
+    assert [v.detail for v in check(tmp_path)] == ["mentions 'Northwind'"]
+
+
+def test_templated_task_ids_are_found(tmp_path: Path) -> None:
+    template = "id: held-1\n{% for x in y %}\n{% endfor %}\n"
+    _write(tmp_path, "harness/tasks/heldout/h.yaml", template)
+    assert "held-1" in load_deny_terms(tmp_path)
 
 
 def test_real_repo_passes() -> None:

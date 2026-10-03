@@ -8,11 +8,15 @@ dependencies = [
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    "pdfplumber>=0.11.10",
+    "pillow>=12.3.0",
     "playwright>=1.63.0",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
+    "reportlab>=5.0.1",
     "typer>=0.27.2",
     "uvicorn>=0.54.0",
 ]
@@ -44,6 +48,8 @@ files = ["breadcrumb", "sandbox", "harness", "scripts", "tasks.py", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Third-party notice from inside the test client, not about our code.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
 
 [dependency-groups]
 dev = [
@@ -51,4 +57,5 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.10",
     "types-pyyaml>=6.0.12.20260906",
+    "types-reportlab>=5.0.0.20260911",
 ]

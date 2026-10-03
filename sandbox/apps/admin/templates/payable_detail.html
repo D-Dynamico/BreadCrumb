@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ p.ref }}{% endblock %}
+{% block content %}
+{% if saved %}<div class="notice" role="status">Payable {{ p.ref }} saved.</div>{% endif %}
+<h1>Payable {{ p.ref }}</h1>
+{% if p.status == "pending_approval" %}
+<div class="warn" role="status">This payable is above ₹{{ limit | inr }} and is waiting for approval by a finance approver.</div>
+{% endif %}
+<dl class="facts">
+  <dt>Vendor</dt><dd><a href="/vendors/{{ p.vendor_id }}">{{ p.vendor_name }}</a></dd>
+  <dt>Invoice number</dt><dd>{{ p.invoice_no }}</dd>
+  <dt>Invoice date</dt><dd>{{ p.invoice_date }}</dd>
+  <dt>Due date</dt><dd>{{ p.due_date }}</dd>
+  <dt>Amount</dt><dd>₹{{ p.amount_paise | inr }}</dd>
+  <dt>PO number</dt><dd>{{ p.po_number or "None" }}</dd>
+  <dt>Status</dt><dd><span class="status {{ p.status }}">{{ p.status.replace("_", " ") }}</span></dd>
+  <dt>Notes</dt><dd>{{ p.notes or "None" }}</dd>
+  <dt>Entered by</dt><dd>{{ p.created_by }} at {{ p.created_at }}</dd>
+  {% if p.approved_by %}<dt>Approved by</dt><dd>{{ p.approved_by }} at {{ p.approved_at }}</dd>{% endif %}
+</dl>
+{% if can_approve %}
+<form method="post" action="/payables/{{ p.id }}/approve">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p><button class="btn" type="submit">Approve payable</button></p>
+</form>
+{% endif %}
+<p><a href="/payables">Back to payables</a></p>
+{% endblock %}

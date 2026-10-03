@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome to Acme Admin</h1>
+<ul>
+  <li><a href="/payables">Payables</a>: {{ counts.pending }} waiting for approval</li>
+  <li><a href="/payables/new">Enter a new payable</a></li>
+  <li><a href="/vendors">Vendors</a> and <a href="/purchase-orders">purchase orders</a></li>
+  <li><a href="/people">People</a>, or <a href="/people/new">add an employee</a></li>
+  <li><a href="/tickets">Tickets</a>: {{ counts.open_tickets }} open</li>
+  <li><a href="/messages">Team messages</a></li>
+</ul>
+{% endblock %}

@@ -49,6 +49,15 @@ def test(args: argparse.Namespace) -> int:
     return _python("-m", "pytest", *args.pytest_args)
 
 
+def seed(args: argparse.Namespace) -> int:
+    extra = ["--today", args.today] if args.today else []
+    return _python("-m", "sandbox.seed", "--seed", str(args.seed), *extra)
+
+
+def sandbox(args: argparse.Namespace) -> int:
+    return _python("-m", "sandbox.launcher", "--faults", args.faults)
+
+
 def _not_yet(phase: int, what: str) -> Callable[[argparse.Namespace], int]:
     def stub(_: argparse.Namespace) -> int:
         print(f"{what} arrives in Phase {phase} (see docs/PHASES.md). Nothing was run.")
@@ -71,13 +80,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("seed", help="rebuild the sandbox database from a seed")
     p.add_argument("--seed", type=int, default=1)
-    p.set_defaults(func=_not_yet(1, "Seeding the sandbox"))
+    p.add_argument("--today", help="pin the sandbox date, YYYY-MM-DD (default: today)")
+    p.set_defaults(func=seed)
 
     p = sub.add_parser("sandbox", help="start the sandbox apps with a fault profile")
     p.add_argument(
         "--faults", default="none", choices=["none", "flaky", "session", "drift", "chaos"]
     )
-    p.set_defaults(func=_not_yet(1, "The sandbox"))
+    p.set_defaults(func=sandbox)
 
     sub.add_parser("ui", help="start the Breadcrumb web UI").set_defaults(
         func=_not_yet(5, "The web UI")

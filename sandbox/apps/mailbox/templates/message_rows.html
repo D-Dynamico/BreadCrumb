@@ -1,0 +1,10 @@
+{% for m in rows %}
+<tr>
+  <td>{{ m.to_addr if folder == "sent" else m.from_name }}</td>
+  <td><a href="/messages/{{ m.id }}">{{ m.subject }}</a></td>
+  <td>{{ m.attachment_count or "" }}</td>
+  <td>{{ m.sent_at[:10] }}</td>
+</tr>
+{% else %}
+<tr><td colspan="4">No messages.</td></tr>
+{% endfor %}

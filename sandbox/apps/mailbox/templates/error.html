@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Problem{% endblock %}
+{% block content %}
+<h1>Something went wrong</h1>
+<div class="errors" role="alert">{{ detail }}</div>
+<p><a href="/inbox">Back to the inbox</a></p>
+{% endblock %}
