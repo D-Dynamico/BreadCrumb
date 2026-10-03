@@ -91,7 +91,8 @@ That promise touches almost every criterion:
 
 ## Assumptions
 
-- Reviewers will run it locally with their own Anthropic API key.
+- Reviewers will run it locally with their own Gemini API key (the free tier is enough
+  for single runs).
 - A sandbox the candidate builds is acceptable, as long as it is honest (not rigged)
   and the evaluation is scored by an oracle independent of the agent.
 - English-language tasks, Indian rupee amounts, dates in ISO format inside the apps.

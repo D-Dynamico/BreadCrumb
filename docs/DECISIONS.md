@@ -199,3 +199,25 @@ name pools, not from one seed's output.
 snapshot cannot show a change that was made and reverted. (c) A deny-list from one
 seed would miss names that only appear under other seeds, which are exactly the ones
 used in held-out runs.
+
+### D23. Gemini 3.1 Flash Lite on the free tier as the model (2026-10-04)
+
+**Decision.** Use the Google Gemini API with `gemini-3.1-flash-lite`, set through
+`LLM_PROVIDER` and `LLM_MODEL` in `.env`. The model client stays behind one small
+interface, so the provider can be swapped without touching the agent.
+
+**Why.** The author wanted a free provider, and reviewers can get a free key too.
+Checked in Google's model docs on 2026-10-04: the ID is `gemini-3.1-flash-lite`, a
+stable release, with function calling, structured output and a 1,048,576-token input
+window. A lite model keeps the agent honest about its design: the contract, gateway
+and verifier have to carry reliability, not a large model.
+
+**Risk.** Free-tier limits are per project and only shown in AI Studio, not in the
+docs. A run is tens of model calls and the eval is hundreds, so requests per day may
+be the real constraint. The dev cache (D15) matters more, and the held-out repeats in
+the cut line may need to drop sooner. Check the AI Studio limits before Phase 2.
+
+**Rejected.** Anthropic API (paid). Groq free tier (very fast, but tokens-per-minute
+caps clash with large page snapshots, and open-weight models are weaker at long
+tool-calling chains). Gemini 3.8 Flash (stronger, but the free tier showed only 20
+requests per day).

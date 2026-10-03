@@ -40,7 +40,7 @@ Tagline: *an AI worker that can be interrupted and still finish the job.*
 ## Where we are
 
 - Status: Phase 0 (scaffold) done on 2026-10-04. Next is Phase 1 (sandbox) in
-  `docs/PHASES.md`. Model provider still to be decided before Phase 2.
+  `docs/PHASES.md`. Model: Gemini 3.1 Flash Lite (D23).
 - Timebox: about 7 days of build. The cut line is in `docs/PHASES.md`. Respect it.
 - The full brief and evaluation criteria are in `docs/PROBLEM.md`.
 
@@ -69,7 +69,7 @@ Read the doc that matches the question. Don't duplicate their content here.
 - **Language**: Python 3.12, dependencies managed with `uv`
 - **Sandbox apps**: FastAPI + Jinja templates + HTMX, SQLite, server-rendered pages
 - **Agent**: hand-written loop (no LangChain or LangGraph), Pydantic models,
-  Anthropic API (current Claude Sonnet model, ID from config, verify it in the docs)
+  Google Gemini API, `gemini-3.1-flash-lite` (free tier; ID from config, see D23)
 - **Browser**: Playwright (Chromium), observing the accessibility tree
 - **Run store**: SQLite in WAL mode (`runs.db`), separate from the sandbox database
 - **UI**: small FastAPI + HTMX page with Server-Sent Events for the live step log
@@ -100,10 +100,8 @@ Read the doc that matches the question. Don't duplicate their content here.
 10. Keep it small. A narrow system that genuinely works beats a broad mocked one.
     If a feature is not in `docs/PHASES.md`, ask before building it.
 
-## Commands (planned, create them in Phase 0 and keep this list accurate)
+## Commands (created in Phase 0, keep this list accurate)
 
-| Command | Purpose |
-|---|---|
 Cross-platform (the author works on Windows): `uv` plus a small Python task runner,
 no `make`. Run `uv sync` once to get the `tasks` and `breadcrumb` entry points.
 

@@ -168,5 +168,6 @@ breadcrumb/                      repo root
   fast to build, no frontend build step.
 - Playwright for the browser, accessibility tree as the main observation.
 - SQLite in WAL mode for the run store: durable, zero setup, honest fsync semantics.
-- Anthropic API with a model ID from config. Model access sits behind one small
+- Google Gemini API (`gemini-3.1-flash-lite`, free tier) with provider and model ID
+  from config (D23). Model access sits behind one small
   client interface so it can be swapped.

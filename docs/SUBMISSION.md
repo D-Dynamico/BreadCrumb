@@ -39,7 +39,7 @@
 
 ## Built with (fill in exact versions at the end)
 
-- Anthropic API, Claude Sonnet (exact model ID from config)
+- Google Gemini API, Gemini 3.1 Flash Lite (`gemini-3.1-flash-lite`, from config)
 - Python 3.12, uv
 - FastAPI, Jinja2, HTMX
 - Playwright (Chromium)
