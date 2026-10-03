@@ -3,7 +3,9 @@
 Every action carries `why` (one sentence, for the step log) and two optional
 bookkeeping fields, `remember` (facts) and `plan` (the updated plan), so keeping
 notes and a plan costs no extra model call on a rate-limited free tier. Writes are separate
-actions (`browser_submit`, `http_write`, `notify`) so they are always declared.
+actions (`browser_submit`, `http_write`, `notify`) so they are always declared, and the
+first two also declare their effect: what kind of change, the key of the record, and an
+API read that finds it, so the gateway can check before and confirm after (D31).
 """
 
 from __future__ import annotations
@@ -53,13 +55,43 @@ def _action(
         "parameters": {
             "type": "object",
             "properties": {**params, **_COMMON},
-            "required": [*params.keys(), "why"],
+            "required": [*(k for k in params if k not in _OPTIONAL), "why"],
         },
     }
 
 
+_OPTIONAL = frozenset({"key_json", "values_json", "lookup_operation", "lookup_params_json"})
 _ELEMENT = {"type": "integer", "description": "Element number from the current observation"}
 _CHANGE = {"type": "string", "description": "The change this makes, in plain words"}
+_EFFECT: dict[str, dict[str, Any]] = {
+    "effect": {
+        "type": "string",
+        "enum": ["create", "update", "other"],
+        "description": "create: adds a new record; update: changes an existing record; "
+        "other: anything else",
+    },
+    "key_json": {
+        "type": "string",
+        "description": "For create and update: JSON of the fields that identify the record, "
+        "named and written exactly as lookup_operation returns them, "
+        'e.g. {"order_no": "A-12", "customer_name": "Example Ltd"}',
+    },
+    "values_json": {
+        "type": "string",
+        "description": "Other important values this writes, as JSON with the same naming, "
+        'e.g. {"total": "120.00", "order_date": "2026-01-31"}',
+    },
+    "lookup_operation": {
+        "type": "string",
+        "description": "For create and update: an API read operation that lists such "
+        "records. It is used to check first that the record does not exist yet, and to "
+        "confirm later what happened",
+    },
+    "lookup_params_json": {
+        "type": "string",
+        "description": "Optional filters for lookup_operation, as JSON",
+    },
+}
 
 ACTIONS: list[dict[str, Any]] = [
     _action("browser_open", "Open a URL in the browser.", {"url": {"type": "string"}}),
@@ -82,7 +114,7 @@ ACTIONS: list[dict[str, Any]] = [
     _action(
         "browser_submit",
         "Press a button that saves, submits, sends, approves or deletes something.",
-        {"element": _ELEMENT, "description": _CHANGE},
+        {"element": _ELEMENT, "description": _CHANGE, **_EFFECT},
     ),
     _action("login", "Sign in to the app currently open in the browser."),
     _action("files_list", "List downloaded files."),
@@ -103,6 +135,7 @@ ACTIONS: list[dict[str, Any]] = [
             "params_json": {"type": "string", "description": "Path and query parameters as JSON"},
             "body_json": {"type": "string", "description": "Request body as JSON"},
             "description": _CHANGE,
+            **_EFFECT,
         },
     ),
     _action(

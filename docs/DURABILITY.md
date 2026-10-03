@@ -34,6 +34,7 @@ LLM calls are not replayed; see "Why checkpoints, not replay" below.
 | `AWAITING_APPROVAL` | A tier 2 action waits for the user. Durable: survives restarts |
 | `INTERRUPTED` | Found `RUNNING` with an expired lease on startup, or killed. Resumable |
 | `RECONCILING` | Resume in progress, settling ambiguous journal entries |
+| `FINISHED` | Phase 3 stand-in until the verifier exists: the worker called `finish` |
 | `VERIFYING` | Verifier evaluating contract checks |
 | `DONE` | All checks passed |
 | `FAILED` | Could not complete. Receipt explains where and why |
@@ -49,7 +50,9 @@ Each entry records:
 - `tool` and `target`: which app, which entity type
 - `params`: the resolved values, with fact references for sensitive fields
 - `natural_key`: the business identity of the effect, for example
-  `vendor=Northwind Traders, invoice_no=INV-2291`, or `employee_email=priya@acme.test`
+  `vendor=Northwind Traders, invoice_no=INV-2291`, or `employee_email=priya@acme.test`.
+  The commit declares it, together with the `lookup` (an API read operation that
+  lists such records) used to find it again (D31)
 - `idempotency_key`: derived from run, contract and natural key, stable across retries.
   It is the entry's internal identity. It reaches an app only on Admin API writes, as
   an `Idempotency-Key` header (see below)
@@ -86,6 +89,11 @@ Rules:
 
 - **Nothing reaches the world without an `INTENDED` entry already on disk.**
 - An entry still in `DISPATCHED` when a run is resumed is treated as `UNKNOWN`.
+- An entry still in `INTENDED` was never sent, because `DISPATCHED` is committed to
+  disk before the tool fires. It becomes `NOT_APPLIED` without looking (D32).
+- Outcomes come from the HTTP status of the writes the dispatch sent: 2xx or 3xx is
+  `CONFIRMED`, 4xx is `FAILED`, 5xx or no answer is `UNKNOWN`, and nothing sent at all
+  is `FAILED`. An `UNKNOWN` in a live run is settled right away by looking.
 - A retry is a new attempt on the same entry with the same idempotency key. Before any
   retry of a create, the gateway re-checks the natural key. If it already exists, the
   retry is skipped and the entry becomes `CONFIRMED`.
@@ -110,13 +118,17 @@ It does so by looking, never by assuming.
 
 | Effect type | How to check |
 |---|---|
-| Create a record | Search the app (UI search or API GET) by natural key. Exactly one match with matching values: `CONFIRMED`. None: `NOT_APPLIED`. Match with different values or more than one: `CONFLICT` |
+| Create a record | Run the lookup the commit declared (an API GET) and match the natural key. If a filtered lookup finds nothing, check the whole list too. Exactly one match with matching values: `CONFIRMED`. None: `NOT_APPLIED`. Match with different values or more than one: `CONFLICT` |
 | Update a record | Read the record. Fields equal the intended values: `CONFIRMED`. Equal the before-values: `NOT_APPLIED`. Anything else: `CONFLICT` |
 | Send an email or notification | Look in the Sent folder or channel for a message carrying the run's reference token in its body footer (for example `Ref: BC-7F3K`). Visible to humans on purpose, like a real ticket reference |
 | Submit for approval | Read the record's status |
 
-These checks reuse the verifier's check types (see `AGENT_DESIGN.md`), so there is one
-way of asking "is this true in the apps", not two.
+The same lookup is the gateway's natural-key check before dispatch, so the question
+"does this already exist" is asked one way before and after. Phase 4 aligns it with
+the verifier's check types (see `AGENT_DESIGN.md`), so there is one way of asking "is
+this true in the apps", not two. As built, the decisions live in
+`breadcrumb/journal/machine.py` (pure, unit-tested) and the looking in
+`breadcrumb/gateway/gateway.py`.
 
 `CONFLICT` and any reconcile that cannot be answered move the run to `ESCALATED`
 with a clear question for the user. The worker never guesses on money or messages.
@@ -126,8 +138,9 @@ with a clear question for the user. The worker never guesses on money or message
 1. **Acquire the lease.** Refuse if another live worker holds it.
 2. **Load the latest checkpoint**: contract, plan tree, ledger, counters.
 3. **Start a fresh browser session.** Old sessions are gone. Log in again as needed.
-4. **Reconcile.** Status `RECONCILING`. Settle every `DISPATCHED` or `UNKNOWN` entry.
-   Mark plan subgoals as done or not done based on the results.
+4. **Reconcile.** Status `RECONCILING`. Settle every `INTENDED`, `DISPATCHED` or
+   `UNKNOWN` entry. The plan is not rewritten; instead every prompt carries the
+   journal (each effect with its state), which says what is done.
 5. **Re-observe.** Take a fresh observation of where the worker needs to be next.
 6. **Continue the loop.** The executor receives a short "you were interrupted, here is
    what is confirmed, here is what is not" summary in its context, built from the
@@ -136,7 +149,10 @@ with a clear question for the user. The worker never guesses on money or message
    show them.
 
 Resume can be triggered by `breadcrumb resume <run_id>`, by a Resume button in the UI,
-or automatically on startup for `INTERRUPTED` runs if `AUTO_RESUME=true`.
+or automatically on startup for `INTERRUPTED` runs if `AUTO_RESUME=true` (the UI and
+auto-resume come in Phase 5; Phase 3 has the CLI). A run is `INTERRUPTED` when
+`breadcrumb kill` stopped it, or when `breadcrumb runs` or `resume` finds its heartbeat
+older than `LEASE_TIMEOUT_SECONDS`.
 
 ## Lease and heartbeat
 
@@ -162,6 +178,10 @@ explicit environment variable. It kills the worker process abruptly (no cleanup)
 outside (the demo, or the harness simulating a machine dying), use
 `breadcrumb kill <run_id>`, which terminates the worker's process with a
 cross-platform hard terminate (no signal handlers, no cleanup), never `kill -9`.
+
+`CRASH_POINT=after_dispatch` fires on the run's first commit, `after_dispatch:2` on
+the second. The worker exits with code 75. A resumed run ignores `CRASH_POINT`, so one
+injected crash is one interruption (D33).
 
 | Crash point | When it fires | What it proves |
 |---|---|---|

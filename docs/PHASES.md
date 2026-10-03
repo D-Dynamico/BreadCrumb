@@ -54,6 +54,9 @@ a readable step log. **This is the milestone everything else depends on.**
 - `breadcrumb kill <run_id>` for cross-platform external kills
 - `breadcrumb resume`, reconcile procedure, crash injection hooks
 - Unit tests for the state machine and reconcile decisions
+- Loop detection, first slice (moved up from the design, D34): repeat window with a
+  note, a refusal, then escalation; `ended_by` on every run. Exit runs use
+  `--max-steps 40`
 
 **Exit:** for family 1, inject each crash point (`before_intended`, `after_intended`,
 `after_dispatch`), resume, and finish with exactly one payable and one notification.

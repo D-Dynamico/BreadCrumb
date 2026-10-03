@@ -2,12 +2,13 @@
 
 This is the structured state the model sees each turn, instead of a growing chat
 transcript: the task, the plan, remembered facts, recent actions and the latest
-observation. Phase 3 checkpoints it after every step.
+observation. It is checkpointed after every step (DURABILITY.md), all but the
+observation: a resumed run starts with a fresh browser anyway.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -48,8 +49,28 @@ class RunState:
     tokens: int = 0
     model_calls: int = 0
     violations: list[str] = field(default_factory=list)
-    status: str = "running"
+    status: str = "RUNNING"
     summary: str = ""
+    ended_by: str = ""  # why the run ended, for the receipt (see Executor._end)
+    wall_seconds: float = 0.0  # time spent in earlier sessions of this run
+    resumes: int = 0
+    interruption: str = ""  # what resume settled, shown to the model after a resume
+
+    def to_checkpoint(self) -> dict[str, Any]:
+        data = asdict(self)
+        del data["observation"], data["observation_source"]
+        return data
+
+    @classmethod
+    def from_checkpoint(cls, data: dict[str, Any]) -> RunState:
+        return cls(
+            **{
+                **data,
+                "plan": [PlanStep(**p) for p in data.get("plan", [])],
+                "facts": {k: Fact(**f) for k, f in data.get("facts", {}).items()},
+                "history": [StepRecord(**r) for r in data.get("history", [])],
+            }
+        )
 
     def remember(self, items: list[dict[str, Any]], step: int) -> list[str]:
         """Store facts; return notes about values that changed."""

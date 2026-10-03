@@ -95,15 +95,31 @@ class HttpTool:
         url, query = self._url(op, params)
         return self._format(httpx.get(url, params=query, headers=self._headers, timeout=15))
 
-    def write(
-        self, operation_id: str, params: dict[str, Any], body: dict[str, Any], idempotency_key: str
-    ) -> str:
+    def get_json(self, operation_id: str, params: dict[str, Any]) -> Any:
+        """A read for the gateway's lookups: the parsed body, never truncated."""
+        op = self.operations().get(operation_id)
+        if op is None or op.method != "GET":
+            raise HttpError(f"{operation_id!r} is not a read operation of this API")
+        url, query = self._url(op, params)
+        response = httpx.get(url, params=query, headers=self._headers, timeout=15)
+        if response.status_code >= 400:
+            raise HttpError(f"{operation_id} answered HTTP {response.status_code}")
+        return response.json()
+
+    def check_write(self, operation_id: str) -> None:
         op = self.operations().get(operation_id)
         if op is None or op.method == "GET":
             raise HttpError(f"{operation_id!r} is not a write operation of this API")
+
+    def write(
+        self, operation_id: str, params: dict[str, Any], body: dict[str, Any], idempotency_key: str
+    ) -> tuple[int, str]:
+        """Send a write. Returns the status and the formatted response."""
+        self.check_write(operation_id)
+        op = self.operations()[operation_id]
         url, query = self._url(op, params)
         headers = {**self._headers, "Idempotency-Key": idempotency_key}
         response = httpx.request(
             op.method, url, params=query, json=body, headers=headers, timeout=15
         )
-        return self._format(response)
+        return response.status_code, self._format(response)

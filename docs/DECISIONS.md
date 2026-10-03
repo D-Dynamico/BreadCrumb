@@ -315,3 +315,80 @@ invoice already in Admin as "the latest" and declared the job done. A new employ
 would be told on day one where work arrives; that is company knowledge, not a task
 hint. Nothing names a task, vendor or trap, and the generality check still passes.
 This failure is also the case the Phase 4 verifier exists for.
+
+### D31. A commit says how to find its record again (2026-10-04)
+
+**Decision.** `browser_submit` and `http_write` declare their effect: `effect` (create,
+update, other), `key_json` (the fields that identify the record, named as an API read
+returns them), `values_json` and `lookup_operation` (an API read that lists such
+records). A create or update without a key and a lookup is refused before anything is
+journaled. The gateway runs the lookup before dispatch (the natural-key check) and
+again on resume to settle an in-flight entry. The natural key and the lookup are
+stored in the journal entry, so reconcile needs nothing from the worker's memory.
+Lookup filters are only a hint: if a filtered lookup finds nothing, the whole list is
+checked before concluding the record is absent. Messages need no declaration: their
+key is the channel plus the run's reference token, so one notify per channel per run.
+
+**Why.** Reconcile has to answer "did this happen?" deterministically, and the agent
+may not contain task-specific code (no "search payables by invoice number" anywhere).
+The worker already knows the API's operations; asking it to name the lookup before it
+acts turns "check it doesn't exist first" from prompt advice into structure, and the
+answer is fixed at the moment of intent, not reconstructed after a crash. Phase 4's
+contract can later supply or cross-check the key.
+
+**Rejected.** Lookups hard-coded per entity type (task-specific code); letting the
+model judge after resume whether the effect happened (not deterministic, and exactly
+the memory a crash erases); waiting for the Phase 4 contract (Phase 3's exit needs
+reconcile now). **Limit.** Effects with no API read to find them can still be made
+(`effect: other`), but if one is ever in doubt the run escalates.
+
+### D32. Outcomes come from HTTP status; an INTENDED entry was never sent (2026-10-04)
+
+**Decision.** A dispatch is classified from the HTTP status of the writes it sent:
+2xx or 3xx is `CONFIRMED`, 4xx is `FAILED`, 5xx or no answer is `UNKNOWN` (then
+settled at once by looking), nothing sent is `FAILED`. The browser tool records the
+response status of each declared write. On resume, an entry still `INTENDED` becomes
+`NOT_APPLIED` without looking, because `DISPATCHED` is committed to disk before the
+tool fires; `DISPATCHED` becomes `UNKNOWN` and is settled by the lookup.
+
+**Why.** Standard HTTP meaning is generic across apps, and the sandbox forms already
+answer 303 on save and 422 on a validation error, like most real web apps. The
+write-ahead order is what makes the `INTENDED` rule safe; it is the reason for writing
+`DISPATCHED` separately at all.
+
+### D33. Crash points fire once, in the process that started the run (2026-10-04)
+
+**Decision.** `CRASH_POINT=after_dispatch` fires on the first commit;
+`after_dispatch:2` on the second. A resumed run ignores `CRASH_POINT`, so one injected
+crash is one interruption even if the variable is still set. Checkpoints keep one row
+per run (the latest), without the page observation, since a resumed run starts with a
+fresh browser.
+
+**Why.** The harness and demo need a predictable single crash per run. Keeping only
+the latest checkpoint is enough for resume; the step log keeps the full history.
+
+### D34. Loop detection moves into Phase 3, as a repeat window (2026-10-04)
+
+**Decision.** Build the first slice of the loop detection designed in `AGENT_DESIGN.md`
+section 3 now. A repeat is the same action and arguments on the same state fingerprint
+as an action within the last 6 steps. The fingerprint depends on what is observed: a
+page's URL path and interactive elements with their values, or a file's or API
+answer's source and content hash. First repeat: run it with a note pointing to
+`remember`. Second: refuse it, unexecuted, and ask for an updated plan. Third: end the
+run `ESCALATED`. The count resets on progress (a `CONFIRMED` commit or a plan step
+newly done) and at the start of every session of a run. Every run also records
+`ended_by`, so the receipt says whether a budget ran out or repeats escalated. Exit
+runs for Phase 3 use `--max-steps 40`.
+
+**Why.** The first crash-and-resume run looped for 27 steps (read the PDF, reopen the
+form, which wipes it, read again) until the token budget ran out, costing about 60 of
+the day's 500 free-tier requests. With several crash-point runs to do, a loop has to
+end in a few steps, not a whole budget. The design's "twice in a row" rule would not
+have caught it, because the loop was a cycle of 2 to 4 different actions; a window
+does. Resetting on progress keeps scattered, legitimate repeats in a long run from
+adding up; resetting per session keeps re-observing after a resume from counting.
+
+**Rejected.** Consecutive-only detection (misses cycles); rerunning without it and
+accepting the variance (one loop costs a whole run's requests); a 30-step cap for the
+exit runs (a legitimate crash plus resume needs 30 to 32 steps, since a resume must
+log in again and refill the form).

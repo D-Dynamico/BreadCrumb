@@ -58,7 +58,8 @@ One action per turn, over structured state rather than a growing chat transcript
 1. The contract (goal, checks, scope, protected, assumptions)
 2. The plan tree: subgoals with status (`todo`, `doing`, `done`, `blocked`)
 3. The fact ledger, compact
-4. Journal summary: confirmed effects, pending effects, failures
+4. Journal summary: every effect with its state (built from `runs.db`), and after a
+   resume, what reconcile settled
 5. The latest observation (accessibility snapshot, file excerpt or API response),
    wrapped and labelled as untrusted data
 6. The last few actions and their outcomes, compressed
@@ -80,31 +81,54 @@ As built in Phase 2 (`breadcrumb/executor/actions.py`):
   observation, so there is no separate observe action.
 - Commits (declared writes): `browser_submit(element, description)` for any button that
   saves, sends, approves or deletes; `http_write(operation_id, params_json, body_json,
-  description)`; `notify(message)`. Only commits may change the world. Phase 3 routes
-  them through the gateway and journal; Phase 4 adds natural keys and risk tiers.
+  description)`; `notify(message)`. Only commits may change the world, and all of them
+  go through the gateway and the journal. `browser_submit` and `http_write` also
+  declare their effect: `effect` (create, update or other), `key_json` (the fields that
+  identify the record, named as an API read returns them), `values_json` and
+  `lookup_operation` with optional `lookup_params_json` (an API read that lists such
+  records). A create or update without a key and a lookup is refused (D31). `notify`
+  needs none: its key is the channel plus the run's reference token. Phase 4 adds the
+  contract's scope and risk tiers on top.
 - Session: `login()`: fills and submits the current app's login form with credentials
   from config, matched by URL. The model never sees a password. Its POST is the one
   non-commit write the network watch allows. Logged as a step event, never journaled.
-- Bookkeeping fields on every action, not separate actions: `why` (required, one
-  sentence for the step log), `remember` (facts with their source) and `plan` (the
-  whole updated plan, only when it changes). Separate `record_fact` and `update_plan`
-  actions were tried first; the model spent four of nine turns on plan updates alone,
-  which a 500-requests-a-day budget cannot afford (D28).
+- Bookkeeping fields on every action: `why` (required, one sentence for the step log),
+  `remember` (facts read in the current observation, each with its source and
+  locator) and `plan` (the whole updated plan, only when it changes). Facts and the
+  plan ride along on whatever action the worker takes next, so keeping them costs no
+  model call (D28). There are no separate bookkeeping actions.
 - `finish(summary)`: requests verification. The agent cannot mark the run done itself.
-  In Phase 2 a run ends as `finished`, meaning "the worker says so"; the oracle scores it.
+  Until the Phase 4 verifier, a run ends as `FINISHED`, meaning "the worker says so";
+  the oracle scores it.
 - Planned: `ask_user(question, options?)` with durable waits (Phases 3 and 4).
 
 **Re-planning.** If an observation contradicts the plan (the invoice is not where
 expected, the form has a new required field), the executor updates the plan tree
 before acting. Plan updates are logged so the receipt can show how it adapted.
 
-**Loop detection.** A state fingerprint is the hash of: current URL path, the list of
-interactive elements (role and accessible name), and current form values. The same
-action on the same fingerprint twice in a row counts as a loop. First time: force a
-re-plan with a note. Second time: escalate with what was tried.
+**Loop detection** (`breadcrumb/executor/repeats.py`, D34). The state fingerprint
+depends on what is observed: for a page, the URL path plus the interactive elements
+with their values (typed text, selected options); for a file or an API answer, the
+source plus a hash of the content. A repeat is the same action with the same
+arguments on the same fingerprint as an action within the last 6 steps, not only the
+previous one, because real loops cycle (read a file, reopen a form, read it again).
+
+| Repeat | What happens |
+|---|---|
+| First | The action runs; its outcome carries a note naming the earlier step and asking the worker to put needed values in `remember` or change approach |
+| Second | Refused, not executed; the outcome lists the steps involved and asks for an updated plan |
+| Third | The run ends `ESCALATED`, saying what was repeated |
+
+The count resets on progress (a commit that ends `CONFIRMED`, or a plan step newly
+marked done), so scattered, legitimate repeats in a long run do not add up. Each
+session of a run starts with a fresh window, so re-observing pages after a resume is
+never a repeat.
 
 **Budgets.** Max steps per run, max wall time, max tokens. All configurable. Hitting a
-budget ends the run as `FAILED` with an honest receipt, never as a silent stop.
+budget ends the run as `FAILED` with an honest receipt, never as a silent stop. Every
+run records `ended_by` (`finish`, `step_budget`, `time_budget`, `token_budget`,
+`repeats`, `reconcile`, `unclear_effect`, `model_error`), shown by the CLI and kept in
+`summary.json`, so a receipt always says whether a budget ran out or repeats escalated.
 
 ## 4. Tools
 
@@ -114,7 +138,7 @@ All tools are generic. None knows about invoices, vendors or employees.
 |---|---|---|
 | `browser` | Open URLs, observe the accessibility tree with numbered interactive elements, click, type, select, screenshot | Watches network traffic: any non-GET request caused by something other than a declared commit or the declared `login` action is an integrity violation |
 | `files` | List downloads and attachments, read PDF text with page and line locators | Text layer first. One scanned image-only invoice exists in the seed; for it, the worker must ask or escalate rather than guess |
-| `http` | Call operations listed in the API's OpenAPI spec (fetched at run start and shown to the model as one line per operation) | GETs are reads. Writes only via `http_write`, and every write carries an `Idempotency-Key` header (Phase 2: run and step; Phase 3: the journal entry's key) |
+| `http` | Call operations listed in the API's OpenAPI spec (fetched at run start and shown to the model as one line per operation) | GETs are reads. Writes only via `http_write`, and every write carries an `Idempotency-Key` header: the journal entry's idempotency key, derived from the run and the natural key, so a retry repeats the same key |
 | `notify` | Post a message to the requester's channel (`NOTIFY_URL`, `NOTIFY_CHANNEL`) | A commit, tier 1. Every message ends with the run's reference token, `Ref: BC-XXXX` |
 | `ask_user` | Ask a question, run pauses durably | Answer becomes a fact with source `user` |
 
@@ -177,7 +201,7 @@ Rules:
 | Session expired | Redirected to login | Log in again, return to the page, re-observe |
 | Validation error | Form shows "Due date must be in the future" | Read the message, compare with ledger facts. Fixable from facts: fix. Otherwise ask |
 | Unexpected modal | "What's new" popup | Dismiss if it is clearly non-committing, then continue |
-| Loop | Same action, same fingerprint | Re-plan, then escalate |
+| Loop | Same action on the same fingerprint within the last 6 steps | Note, then refuse and ask for a new plan, then escalate (section 3) |
 | Repeated failure | Same subgoal fails 3 times | Escalate with what was tried |
 
 The policy is a deterministic table in code. The model chooses *what* to try next only

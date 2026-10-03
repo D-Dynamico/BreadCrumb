@@ -26,6 +26,7 @@ def build_prompt(
     browser_url: str,
     step: int,
     max_steps: int,
+    journal: list[str] | None = None,
 ) -> str:
     parts = [f"# Task from the user\n{state.task}"]
     parts.append(
@@ -38,6 +39,14 @@ def build_prompt(
     parts.append(f"# Your plan\n{plan or '(no plan yet)'}")
     facts = "\n".join(f"- {f.key} = {f.value}  (from {f.source})" for f in state.facts.values())
     parts.append(f"# Facts you remembered\n{facts or '(none yet)'}")
+    if journal:
+        parts.append(
+            "# Changes made so far (the journal, the source of truth)\n"
+            "CONFIRMED is done: never repeat it. FAILED or NOT_APPLIED did not happen: "
+            "do it again only if it is still needed.\n" + "\n".join(journal)
+        )
+    if state.interruption:
+        parts.append(f"# You were interrupted\n{state.interruption}")
     recent = state.history[-RECENT_ACTIONS:]
     lines = [
         f"#{r.step} {r.action} {_short(_args(r.args), 120)} -> "

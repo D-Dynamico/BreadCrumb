@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Download, Locator, Page, Request, sync_playwright
+from playwright.sync_api import Download, Locator, Page, Request, Response, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from breadcrumb.config import AppAccess
@@ -57,6 +57,7 @@ class WriteRecord:
     method: str
     url: str
     declared: str | None
+    status: int | None = None  # None until a response arrives, or if none ever does
 
 
 @dataclass
@@ -65,6 +66,7 @@ class _State:
     downloads: list[Download] = field(default_factory=list)
     declared: str | None = None
     writes: list[WriteRecord] = field(default_factory=list)
+    pending: dict[Request, WriteRecord] = field(default_factory=dict)
 
 
 def _indent(line: str) -> int:
@@ -158,6 +160,7 @@ class BrowserTool:
         context.set_default_timeout(ACTION_TIMEOUT_MS)
         self._page = context.new_page()
         self._page.on("request", self._watch_request)
+        self._page.on("response", self._watch_response)
         self._page.on("download", self._on_download)
 
     def _on_download(self, download: Download) -> None:
@@ -185,8 +188,14 @@ class BrowserTool:
             return
         record = WriteRecord(request.method, request.url, self._state.declared)
         self._state.writes.append(record)
+        self._state.pending[request] = record
         if record.declared is None:
             self.on_violation(record)
+
+    def _watch_response(self, response: Response) -> None:
+        record = self._state.pending.pop(response.request, None)
+        if record is not None:
+            record.status = response.status
 
     @contextmanager
     def _declared(self, what: str) -> Iterator[None]:
@@ -196,8 +205,12 @@ class BrowserTool:
         finally:
             self._state.declared = None
 
+    def peek_writes(self) -> list[WriteRecord]:
+        return list(self._state.writes)
+
     def take_writes(self) -> list[WriteRecord]:
         writes, self._state.writes = self._state.writes, []
+        self._state.pending.clear()
         return writes
 
     # -- observing -------------------------------------------------------------

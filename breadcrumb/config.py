@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     max_tokens: int = 400000
     runs_dir: Path = ROOT / "runs"
     headless: bool = True
+    lease_timeout_seconds: int = 30
+    heartbeat_seconds: int = 5
+    crash_point: str = ""
+
+    @property
+    def runs_db(self) -> Path:
+        return self.runs_dir / "runs.db"
 
     @property
     def apps(self) -> list[AppAccess]:
