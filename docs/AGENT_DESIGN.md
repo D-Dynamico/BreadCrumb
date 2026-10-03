@@ -64,20 +64,35 @@ One action per turn, over structured state rather than a growing chat transcript
 6. The last few actions and their outcomes, compressed
 7. Budgets used so far
 
+Also in every prompt: the systems the worker may use, each with its URL and one line
+on what it is for (from config, `breadcrumb/config.py`), and the API's operations. The
+one-liners are company knowledge a new employee would get on day one, such as "the
+system of record holds work already entered, not new incoming items". They name no
+task, vendor or person (D30). Until Phase 4, the task text stands in for the contract.
+
 **Action space**
 
-- Tool reads: `browser.open`, `browser.observe`, `browser.click`, `browser.type`,
-  `browser.select`, `files.list`, `files.read`, `http.get`
-- Commits: `commit(kind, target, params, natural_key, description)` where the commit is
-  either a browser submit (`element_id`) or an API write (`operation_id`). Only commits
-  can change the world, and they always pass through the gateway.
-- Session: `login(app)`: fills and submits an app's login form with credentials from
-  config. Its POST is the one non-commit write the network watch allows. It is logged
-  as a step event and never journaled as a business effect.
-- Memory: `record_fact(key, value, source, locator)`
-- Planning: `update_plan(...)`
-- Talking to the user: `ask_user(question, options?)`
+As built in Phase 2 (`breadcrumb/executor/actions.py`):
+
+- Reads: `browser_open(url)`, `browser_click(element)`, `browser_type(element, text)`,
+  `browser_select(element, option)`, `files_list()`, `files_read(name)`,
+  `http_get(operation_id, params_json)`. Every browser action returns a fresh
+  observation, so there is no separate observe action.
+- Commits (declared writes): `browser_submit(element, description)` for any button that
+  saves, sends, approves or deletes; `http_write(operation_id, params_json, body_json,
+  description)`; `notify(message)`. Only commits may change the world. Phase 3 routes
+  them through the gateway and journal; Phase 4 adds natural keys and risk tiers.
+- Session: `login()`: fills and submits the current app's login form with credentials
+  from config, matched by URL. The model never sees a password. Its POST is the one
+  non-commit write the network watch allows. Logged as a step event, never journaled.
+- Bookkeeping fields on every action, not separate actions: `why` (required, one
+  sentence for the step log), `remember` (facts with their source) and `plan` (the
+  whole updated plan, only when it changes). Separate `record_fact` and `update_plan`
+  actions were tried first; the model spent four of nine turns on plan updates alone,
+  which a 500-requests-a-day budget cannot afford (D28).
 - `finish(summary)`: requests verification. The agent cannot mark the run done itself.
+  In Phase 2 a run ends as `finished`, meaning "the worker says so"; the oracle scores it.
+- Planned: `ask_user(question, options?)` with durable waits (Phases 3 and 4).
 
 **Re-planning.** If an observation contradicts the plan (the invoice is not where
 expected, the form has a new required field), the executor updates the plan tree
@@ -99,8 +114,8 @@ All tools are generic. None knows about invoices, vendors or employees.
 |---|---|---|
 | `browser` | Open URLs, observe the accessibility tree with numbered interactive elements, click, type, select, screenshot | Watches network traffic: any non-GET request caused by something other than a declared commit or the declared `login` action is an integrity violation |
 | `files` | List downloads and attachments, read PDF text with page and line locators | Text layer first. One scanned image-only invoice exists in the seed; for it, the worker must ask or escalate rather than guess |
-| `http` | Call operations from the Acme Admin OpenAPI spec | GETs are reads. Writes only via `commit`, and every write carries an `Idempotency-Key` header set to the journal entry's idempotency key |
-| `notify` | Post a message to the requester's channel | A commit, journaled, tier 1 |
+| `http` | Call operations listed in the API's OpenAPI spec (fetched at run start and shown to the model as one line per operation) | GETs are reads. Writes only via `http_write`, and every write carries an `Idempotency-Key` header (Phase 2: run and step; Phase 3: the journal entry's key) |
+| `notify` | Post a message to the requester's channel (`NOTIFY_URL`, `NOTIFY_CHANNEL`) | A commit, tier 1. Every message ends with the run's reference token, `Ref: BC-XXXX` |
 | `ask_user` | Ask a question, run pauses durably | Answer becomes a fact with source `user` |
 
 **API first, browser otherwise.** If the Admin API offers the operation, prefer it.

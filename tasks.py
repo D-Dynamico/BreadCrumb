@@ -58,6 +58,32 @@ def sandbox(args: argparse.Namespace) -> int:
     return _python("-m", "sandbox.launcher", "--faults", args.faults)
 
 
+def render(args: argparse.Namespace) -> int:
+    """Print a task's prompt for the seed the sandbox currently holds."""
+    from harness.scoring import Oracle
+    from harness.taskfile import render_task
+
+    print(render_task(Path(args.task), Oracle().scenario()).prompt)
+    return 0
+
+
+def score(args: argparse.Namespace) -> int:
+    """Check the sandbox's current state against a task's ground truth (via the oracle)."""
+    from harness.scoring import Oracle
+    from harness.scoring import score as score_task
+    from harness.taskfile import render_task
+
+    oracle = Oracle()
+    scenario = oracle.scenario()
+    task = render_task(Path(args.task), scenario)
+    results = score_task(task, oracle, scenario)
+    for r in results:
+        print(f"{'PASS' if r.passed else 'FAIL'}  {r.check}: {r.detail}")
+    passed = all(r.passed for r in results)
+    print(f"{task.id}: {'PASSED' if passed else 'FAILED'}")
+    return 0 if passed else 1
+
+
 def _not_yet(phase: int, what: str) -> Callable[[argparse.Namespace], int]:
     def stub(_: argparse.Namespace) -> int:
         print(f"{what} arrives in Phase {phase} (see docs/PHASES.md). Nothing was run.")
@@ -88,6 +114,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--faults", default="none", choices=["none", "flaky", "session", "drift", "chaos"]
     )
     p.set_defaults(func=sandbox)
+
+    p = sub.add_parser("render", help="print a task's prompt for the current seed")
+    p.add_argument("--task", required=True)
+    p.set_defaults(func=render)
+
+    p = sub.add_parser("score", help="check the sandbox against a task's ground truth")
+    p.add_argument("--task", required=True)
+    p.set_defaults(func=score)
 
     sub.add_parser("ui", help="start the Breadcrumb web UI").set_defaults(
         func=_not_yet(5, "The web UI")

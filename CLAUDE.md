@@ -39,8 +39,9 @@ Tagline: *an AI worker that can be interrupted and still finish the job.*
 
 ## Where we are
 
-- Status: Phase 1 (sandbox) done on 2026-10-04; held-out tasks frozen at `8514499`.
-  Next is Phase 2 (bare agent) in `docs/PHASES.md`. Model: Gemini 3.1 Flash Lite (D23).
+- Status: Phase 2 (bare agent, happy path) done on 2026-10-04: family 1 passed 3 of 3
+  oracle-scored runs. Next is Phase 3 (durability) in `docs/PHASES.md`. Held-out tasks
+  frozen at `8514499`. Model: Gemini 3.1 Flash Lite (D23).
 - Timebox: about 7 days of build. The cut line is in `docs/PHASES.md`. Respect it.
 - The full brief and evaluation criteria are in `docs/PROBLEM.md`.
 
@@ -115,6 +116,8 @@ no `make`. Run `uv sync` once to get the `tasks` and `breadcrumb` entry points.
 | `uv run breadcrumb resume <run_id>` | Resume an interrupted run |
 | `uv run breadcrumb runs` | List runs and their status |
 | `uv run breadcrumb kill <run_id>` | Terminate a running worker abruptly (demo and harness) |
+| `uv run tasks render --task <file>` | Print a task's prompt for the seed the sandbox holds |
+| `uv run tasks score --task <file>` | Check the sandbox against a task's ground truth (oracle) |
 | `uv run tasks eval --suite dev` | Run the harness on a task suite and write a report |
 | `uv run tasks lint` / `uv run tasks test` | Lint, type-check, run the generality check / run tests |
 

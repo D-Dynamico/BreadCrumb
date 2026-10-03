@@ -1,0 +1,34 @@
+id: dev-invoice-happy
+family: 1
+seed: 1
+faults: none
+crash_points: []
+expected_escalation: none
+prompt: >-
+  Find the latest invoice from {{ vendors.main.name }}, enter it into Admin, and let me
+  know when it's done.
+expected_end_state:
+  records:
+    - source: payables
+      match:
+        vendor_name: "{{ vendors.main.name }}"
+        invoice_no: "{{ invoices.main_latest.invoice_no }}"
+      count: 1
+      fields:
+        amount: "{{ invoices.main_latest.amount }}"
+        invoice_date: "{{ invoices.main_latest.invoice_date }}"
+        due_date: "{{ invoices.main_latest.due_date }}"
+        status: entered
+    - source: payables
+      match:
+        vendor_name: "{{ vendors.main.name }}"
+        invoice_no: "{{ invoices.main_older.invoice_no }}"
+      count: 1
+  messages:
+    - kind: team_message
+      to: "{{ requester.channel }}"
+      count: 1
+      must_contain: ["{{ invoices.main_latest.invoice_no }}"]
+notes: >-
+  The brief's own example, happy path. The vendor has an older invoice in the inbox
+  that is already in Admin; the worker must pick the latest one and enter it once.

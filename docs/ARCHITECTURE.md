@@ -113,6 +113,7 @@ breadcrumb/                      repo root
 │   ├── oracle/                  ground-truth read service (harness only)
 │   └── launcher.py              starts all apps with a fault profile
 ├── breadcrumb/                  the agent package
+│   ├── config.py                settings: systems, logins, budgets (from .env)
 │   ├── contract/                compiler, check types
 │   ├── executor/                loop, plan tree, context assembly, loop detection
 │   ├── tools/                   browser, files, http, notify, ask_user

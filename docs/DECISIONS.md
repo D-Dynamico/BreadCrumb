@@ -265,3 +265,53 @@ confirmation showing the new reference.
 **Why.** These are ordinary traits of internal web tools, so the agent faces what it
 would face at a real company, without anything added for its benefit (ground rule 7).
 GET-only reads are also what make the browser's network watch meaningful (D20).
+
+### D27. Stateless model calls through the Interactions API (2026-10-04)
+
+**Decision.** Each turn makes one call to Gemini's Interactions API with `store=False`,
+a fixed system prompt, one freshly assembled user prompt, the action schemas and
+`tool_choice: any`, so the model must answer with exactly one action. Thinking level
+`low` by default (`LLM_THINKING_LEVEL`).
+
+**Why.** Google now recommends the Interactions API. Rebuilding the context every turn
+(AGENT_DESIGN section 3) means no conversation history lives with the provider: a
+resumed run needs nothing but our own checkpoint, which is the durability story. It
+also keeps each prompt bounded (about 5 to 7K tokens), well under the free tier's
+tokens-per-minute cap.
+
+**Rejected.** Server-side history via `previous_interaction_id` (state we do not own and
+that the free tier deletes after a day); a growing chat transcript (unbounded tokens).
+
+### D28. Facts and plan ride along on every action (2026-10-04)
+
+**Decision.** `remember` and `plan` are optional fields on every action instead of
+separate `record_fact` and `update_plan` actions.
+
+**Why.** On the first run the model spent four of nine turns updating its plan. With
+500 requests a day, bookkeeping must not cost turns. The plan and facts are still
+recorded with their step and source, exactly as before.
+
+### D29. Elements are found by role and name, never by tagging the page (2026-10-04)
+
+**Decision.** The observation is Playwright's ARIA snapshot with interactive elements
+numbered by the worker. An action resolves its number to (role, accessible name,
+position among same-named elements) and uses `get_by_role`. Repeated text (row names,
+cell wrappers, link URLs, echoed labels) is dropped before numbering.
+
+**Why.** Adding ids or attributes to the page would change the apps the worker is
+operating, which is close to rigging (ground rule 7). Role and name are what a person
+using a screen reader relies on, and they survive layout changes (useful for `drift`).
+
+### D30. The worker is told what each system is for (2026-10-04)
+
+**Decision.** Config gives each system a one-line purpose, for example that the inbox
+is where documents from outside arrive and the system of record holds work already
+entered. The executor prompt gains two generic rules: find the item at its source
+before checking the system of record, and look everywhere it could be before
+concluding there is nothing to do.
+
+**Why.** On the second dev run the worker never opened the inbox: it took an older
+invoice already in Admin as "the latest" and declared the job done. A new employee
+would be told on day one where work arrives; that is company knowledge, not a task
+hint. Nothing names a task, vendor or trap, and the generality check still passes.
+This failure is also the case the Phase 4 verifier exists for.
