@@ -596,3 +596,15 @@ recovery continues, so a page that then answers 5xx is retried.
 21 steps and never opened the inbox; the list of unopened systems is a fact about the
 run, not a task hint. Under `flaky`, a download that failed and then succeeded left
 the page looking the same, so reading the file again was wrongly flagged as a repeat.
+
+### D48. Every model call has a hard deadline (2026-10-04)
+
+**Decision.** Each request to the model runs in a daemon thread with a 120-second
+deadline. A request that overruns is abandoned and treated like a dropped
+connection: retried with backoff, then the run fails with `model_error` if retries
+run out.
+
+**Why.** Late in the day (about the daily free-tier limit) the API held requests open
+without answering; a run sat in one call for 19 minutes while its heartbeat kept the
+lease alive, so nothing noticed. The SDK's own timeout setting was ignored in this
+state. A daemon thread means an abandoned call can never keep the process alive.

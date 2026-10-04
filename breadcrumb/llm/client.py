@@ -9,6 +9,8 @@ The client also:
 - paces itself under the provider's requests-per-minute limit,
 - retries rate limits, server errors and dropped connections with backoff,
   never other errors,
+- gives every request a hard deadline: a request that hangs counts as a
+  dropped connection and is retried, so a run can never stall in one call,
 - keeps a dev cache keyed by the exact request (D15), and
 - counts real requests per day in `runs/llm_usage.json`.
 """
@@ -17,7 +19,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
+from concurrent.futures import TimeoutError as Deadline
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -29,6 +33,7 @@ from google import genai
 from breadcrumb.config import Settings
 
 RETRYABLE = {429, 500, 502, 503, 504}
+CALL_DEADLINE_SECONDS = 120.0
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,31 @@ def _status(exc: Exception) -> int | None:
     return None
 
 
+def within_deadline(call: Any, seconds: float) -> Any:
+    """Run a blocking call, giving up after `seconds` (raises Deadline).
+
+    The SDK's own timeout was seen to be ignored while the API held a request open,
+    so the deadline is enforced here. The call runs in a daemon thread: one that
+    overruns is abandoned, its answer discarded, and it never keeps the process alive.
+    """
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            box["value"] = call()
+        except BaseException as exc:  # handed back to the caller below
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, name="model-call", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise Deadline(f"no answer within {seconds:.0f} seconds")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 class GeminiClient:
     def __init__(self, settings: Settings) -> None:
         self.model = settings.llm_model
@@ -77,6 +107,7 @@ class GeminiClient:
         self.usage_file = settings.runs_dir / "llm_usage.json"
         self._client = genai.Client(api_key=settings.llm_api_key.get_secret_value())
         self._last_call = 0.0
+        self.deadline = CALL_DEADLINE_SECONDS
 
     def decide(
         self, system: str, prompt: str, actions: list[dict[str, Any]]
@@ -105,20 +136,23 @@ class GeminiClient:
         for attempt in range(6):
             self._pace()
             try:
-                result: Any = self._client.interactions.create(
-                    model=self.model,
-                    input=prompt,
-                    system_instruction=system,
-                    tools=tools,
-                    generation_config={
-                        "tool_choice": "any",
-                        "thinking_level": self.thinking_level,
-                    },
-                    store=False,
+                result: Any = within_deadline(
+                    lambda: self._client.interactions.create(
+                        model=self.model,
+                        input=prompt,
+                        system_instruction=system,
+                        tools=tools,
+                        generation_config={
+                            "tool_choice": "any",
+                            "thinking_level": self.thinking_level,
+                        },
+                        store=False,
+                    ),
+                    self.deadline,
                 )
             except Exception as exc:
                 status = _status(exc)
-                dropped = status is None and isinstance(exc, httpx.TransportError)
+                dropped = status is None and isinstance(exc, httpx.TransportError | Deadline)
                 if (status in RETRYABLE or dropped) and attempt < 5:
                     time.sleep(delay)
                     delay = min(delay * 2, 60.0)

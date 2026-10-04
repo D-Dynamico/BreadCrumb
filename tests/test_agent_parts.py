@@ -81,3 +81,18 @@ def test_prompt_fences_the_observation_and_shows_recent_actions() -> None:
     assert "#14 browser_click" in prompt and "#4 browser_click" not in prompt
     assert "step 15 of at most 60" in prompt
     assert '"p"' not in prompt and "password" not in prompt.lower()
+
+
+def test_a_hanging_model_call_hits_its_deadline() -> None:
+    import time
+    from concurrent.futures import TimeoutError as Deadline
+
+    import pytest
+
+    from breadcrumb.llm.client import within_deadline
+
+    assert within_deadline(lambda: "ok", 1.0) == "ok"
+    started = time.monotonic()
+    with pytest.raises(Deadline):
+        within_deadline(lambda: time.sleep(5), 0.2)
+    assert time.monotonic() - started < 2
