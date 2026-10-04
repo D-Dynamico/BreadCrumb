@@ -7,6 +7,7 @@ invalid the run fails honestly instead of working without a definition of done.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -118,6 +119,58 @@ SUBMIT_CONTRACT: dict[str, Any] = {
 }
 
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NAME_FIELDS = ("field", "fact", "key", "lookup_operation", "id")
+
+
+def _ident(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    found = _IDENT.search(value)
+    return found.group(0) if found else value
+
+
+def clean_names(value: Any) -> Any:
+    """Keep only the identifier in every name the model writes.
+
+    Flash Lite sometimes leaks JSON punctuation into a name ("amount},{fact:"). The
+    identifier it starts with is kept; validation still checks every name against
+    the API spec and the declared facts, so nothing invalid gets through.
+    """
+    if isinstance(value, list):
+        return [clean_names(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    cleaned: dict[str, Any] = {}
+    for k, v in value.items():
+        if k in _NAME_FIELDS and isinstance(v, str):
+            cleaned[k] = _ident(v)
+        elif k in ("must_contain", "fields") and isinstance(v, list):
+            cleaned[k] = [_ident(x) for x in v]
+        else:
+            cleaned[k] = clean_names(v)
+    return cleaned
+
+
+def drop_self_checks(contract: Contract) -> Contract:
+    """Remove unchanged checks on the records the task itself writes.
+
+    Such a check can never hold for a record being created, and it protects nothing.
+    The model adds it often enough that rejecting the contract would stop runs for
+    no reason; validation still refuses one if it slips through another way.
+    """
+    written = {d.lookup_operation for d in contract.deliverables if d.kind != "send"}
+    return contract.model_copy(
+        update={
+            "protected": [p for p in contract.protected if p.lookup_operation not in written],
+            "extra_checks": [
+                c for c in contract.extra_checks
+                if not (c.type == "field_unchanged" and c.lookup_operation in written)
+            ],
+        }
+    )  # fmt: skip
+
+
 @dataclass
 class Compiled:
     contract: Contract | None
@@ -143,7 +196,7 @@ def compile_contract(
         action, usage = model.decide(system, prompt, [SUBMIT_CONTRACT])
         result.usages.append(usage)
         try:
-            contract = Contract.model_validate(action.args)
+            contract = drop_self_checks(Contract.model_validate(clean_names(action.args)))
             errors = validate(contract, spec)
         except ValidationError as exc:
             contract, errors = None, [f"{'.'.join(map(str, e['loc']))}: {e['msg']}"

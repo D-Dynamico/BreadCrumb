@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from breadcrumb.contract.compiler import clean_names, drop_self_checks
 from breadcrumb.contract.model import ApiSpec, Contract, derive_checks, validate
 
 SPEC = ApiSpec(
@@ -154,6 +155,19 @@ def test_derived_checks_cover_every_deliverable_and_protected_field() -> None:
                 "extra_checks": [
                     {
                         "type": "field_unchanged",
+                        "lookup_operation": "listPayables",
+                        "match": [{"field": "invoice_no", "fact": "doc_no"}],
+                        "fields": ["amount"],
+                    }
+                ]
+            },
+            "records this task writes",
+        ),
+        (
+            {
+                "extra_checks": [
+                    {
+                        "type": "field_unchanged",
                         "lookup_operation": "listVendors",
                         "match": [],
                         "fields": ["bank_account"],
@@ -174,6 +188,11 @@ def test_a_create_key_must_identify_one_record() -> None:
     by_name_only["key"] = [{"field": "vendor_name", "fact": "supplier"}]
     errors = validate(_contract(deliverables=[by_name_only]), SPEC)
     assert any("identifies one record" in e for e in errors)
+    by_parent = _contract().deliverables[0].model_dump()
+    by_parent["key"] = [{"field": "vendor_id", "fact": "doc_no"}]
+    spec = ApiSpec({**SPEC.reads, "listPayables": SPEC.reads["listPayables"] | {"vendor_id"}})
+    errors = validate(_contract(deliverables=[by_parent]), spec)
+    assert any("internal ids" in e for e in errors)
 
 
 def test_duplicate_ids_and_two_messages_are_rejected() -> None:
@@ -242,3 +261,28 @@ def test_api_spec_reads_response_fields_from_openapi() -> None:
     spec = ApiSpec.from_openapi(openapi)
     assert spec.reads == {"listThings": {"id", "label"}}  # getThing needs an id
     assert "notify" in spec.with_notify().reads
+
+
+def test_names_with_leaked_punctuation_are_cleaned_then_validated() -> None:
+    raw = {
+        "key": [{"field": "amount},{fact:", "fact": 'total"}'}],
+        "must_contain": ["doc_no,"],
+        "description": "Keep: punctuation, here.",
+    }
+    assert clean_names(raw) == {
+        "key": [{"field": "amount", "fact": "total"}],
+        "must_contain": ["doc_no"],
+        "description": "Keep: punctuation, here.",
+    }
+
+
+def test_unchanged_checks_on_written_records_are_dropped_not_fatal() -> None:
+    self_check = {
+        "type": "field_unchanged",
+        "lookup_operation": "listPayables",
+        "match": [{"field": "invoice_no", "fact": "doc_no"}],
+        "fields": ["amount"],
+    }
+    contract = drop_self_checks(_contract(extra_checks=[self_check]))
+    assert contract.extra_checks == [] and len(contract.protected) == 1  # vendors kept
+    assert validate(contract, SPEC) == []

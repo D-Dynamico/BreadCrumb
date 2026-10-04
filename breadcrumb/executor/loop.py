@@ -309,6 +309,9 @@ class Executor:
             )
             self.store.save_checkpoint(self.state.run_id, len(self.state.history),
                                        self.state.to_checkpoint())  # fmt: skip
+            # The run is waiting before anything else can happen, so a crash right
+            # here leaves it AWAITING_APPROVAL, as a durable wait should be.
+            self._status(RunStatus.AWAITING_APPROVAL)
             self.crash.waiting_for_approval()
         wait = self._wait_for(wait, RunStatus.AWAITING_APPROVAL)
         if wait.status == "rejected":
@@ -733,6 +736,16 @@ class Executor:
         """End the run. `ended_by` says why (see breadcrumb.receipt.receipt.ENDED_BY)."""
         self.state.status, self.state.summary = status.value, summary
         self.state.ended_by = ended_by
+        contract = self._contract()
+        if contract is not None and not self.state.verdicts:
+            # A run that stopped before finish still gets its checks evaluated, so the
+            # receipt shows exactly what is and is not true in the apps. Status stays.
+            try:
+                verdicts = verify(derive_checks(contract), self.state.facts, self._lookup,
+                                  self.state.reference, self.state.snapshots)  # fmt: skip
+                self.state.verdicts = [v.to_dict() for v in verdicts]
+            except Exception as exc:  # the receipt must be written regardless
+                self._log({"event": "final_check_failed", "detail": str(exc)})
         self.store.set_status(self.state.run_id, status, summary)
         self.store.save_checkpoint(
             self.state.run_id, len(self.state.history), self.state.to_checkpoint()

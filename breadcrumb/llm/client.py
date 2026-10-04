@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from concurrent.futures import TimeoutError as Deadline
@@ -34,6 +35,8 @@ from breadcrumb.config import Settings
 
 RETRYABLE = {429, 500, 502, 503, 504}
 CALL_DEADLINE_SECONDS = 120.0
+# A dropped connection can reach us wrapped in the SDK's own error types.
+_DROPPED = re.compile(r"disconnected|connection (reset|aborted|closed)|timed out", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -152,7 +155,10 @@ class GeminiClient:
                 )
             except Exception as exc:
                 status = _status(exc)
-                dropped = status is None and isinstance(exc, httpx.TransportError | Deadline)
+                dropped = status is None and (
+                    isinstance(exc, httpx.TransportError | Deadline | ConnectionError)
+                    or _DROPPED.search(str(exc)) is not None
+                )
                 if (status in RETRYABLE or dropped) and attempt < 5:
                     time.sleep(delay)
                     delay = min(delay * 2, 60.0)

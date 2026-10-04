@@ -150,6 +150,8 @@ def test_a_change_outside_the_contract_is_refused() -> None:
         _decl(deliverable="update_bank_account")
     with pytest.raises(GatewayRefusal, match="outside the contract"):
         _decl(deliverable="")
+    with pytest.raises(GatewayRefusal, match="notify"):
+        _decl(action="http_write", deliverable="told")
 
 
 def test_a_missing_fact_is_refused_with_its_key() -> None:

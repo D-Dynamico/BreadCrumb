@@ -159,7 +159,11 @@ def declare(
 
     deliverable_id = str(args.get("deliverable") or "").strip()
     target = contract.deliverable(deliverable_id)
-    if target is None or target.kind == "send":
+    if target is not None and target.kind == "send":
+        raise GatewayRefusal(
+            f"not done: {target.id} is a message to the requester; send it with notify"
+        )
+    if target is None:
         names = ", ".join(x.id for x in contract.deliverables if x.kind != "send") or "none"
         raise GatewayRefusal(
             f"not done: {deliverable_id or 'no deliverable'!s} is outside the contract "

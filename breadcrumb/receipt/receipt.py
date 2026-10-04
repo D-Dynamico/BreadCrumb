@@ -95,13 +95,15 @@ def markdown(r: dict[str, Any]) -> str:
         lines += [f"**Goal (contract):** {r['goal']}", ""]
     for a in r["assumptions"]:
         lines.append(f"- Assumed: {a}")
-    lines += ["", "## Checks", ""]
+    after_finish = r["ended_by"] in ("verified", "verification", "unverified")
+    heading = "## Checks" if after_finish else "## Checks (evaluated when the run stopped)"
+    lines += ["", heading, ""]
     if r["checks"]:
         lines += ["| Check | Verdict | Detail |", "|---|---|---|"]
         lines += [f"| {c['check']} | {c['status']} | {c['detail']} |" for c in r["checks"]]
     else:
         lines.append("Not verified (the run did not reach verification).")
-    lines += ["", "## Values written and where they came from", ""]
+    lines += ["", "## Values for the deliverables and where they came from", ""]
     lines += [f"- {v['fact']} = {v['value']} ({v['type']}; from {v['source']})"
               for v in r["values_written"]] or ["- none"]  # fmt: skip
     lines += ["", "## Effects (journal)", ""]

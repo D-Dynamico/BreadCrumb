@@ -113,3 +113,34 @@ def test_repeat_messages_name_the_systems_not_opened_yet(executor: Executor) -> 
     assert all(name in noted.message for name in others)
     assert executor.settings.apps[0].name not in noted.message.split("yet in this run:")[1]
     assert executor._with_unvisited(Check(Response.OK)).message == ""
+
+
+def test_a_failed_verification_gets_one_repair_pass_then_fails_honestly(
+    executor: Executor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from breadcrumb.contract.model import Contract
+    from breadcrumb.executor.state import Fact
+
+    contract = Contract.model_validate(
+        {
+            "goal": "enter it",
+            "facts": [{"key": "doc_no", "type": "id"}, {"key": "who", "type": "text"}],
+            "deliverables": [{"id": "entered", "kind": "create",
+                              "lookup_operation": "listPayables",
+                              "key": [{"field": "invoice_no", "fact": "doc_no"},
+                                      {"field": "vendor_name", "fact": "who"}]}],
+        }
+    )  # fmt: skip
+    executor.state.contract = contract.model_dump()
+    executor.state.facts = {
+        "doc_no": Fact("doc_no", "X-1", "a.pdf", 1, "id"),
+        "who": Fact("who", "North Co", "mail", 1, "text"),
+    }
+    executor.run_dir.mkdir(parents=True)
+    monkeypatch.setattr(executor, "_lookup", lambda spec: [])  # nothing was entered
+    assert executor._verify("All done.") is None  # the repair pass
+    assert executor.state.repair_used and "no record matches" in executor.state.note
+    ended = executor._verify("All done, really.")
+    assert ended is not None and (ended.status, ended.ended_by) == ("FAILED", "verification")
+    receipt = (executor.run_dir / "receipt.md").read_text(encoding="utf-8")
+    assert "| failed | no record matches |" in receipt

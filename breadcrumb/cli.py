@@ -192,7 +192,11 @@ def _after_decision(store: RunStore, run_id: str) -> None:
     alive = record is not None and record.status in WAITING + LIVE
     fresh = record is not None and time.time() - record.heartbeat_at < store.lease_timeout
     if alive and fresh:
-        typer.echo("The worker is waiting and will continue within seconds.")
+        # A worker that died moments ago still looks fresh until its lease expires.
+        typer.echo(
+            "If its worker is still running, it continues within seconds. If not, continue "
+            f"with: uv run breadcrumb resume {run_id}"
+        )
     else:
         typer.echo(f"No worker is running. Continue with: uv run breadcrumb resume {run_id}")
 

@@ -608,3 +608,24 @@ run out.
 without answering; a run sat in one call for 19 minutes while its heartbeat kept the
 lease alive, so nothing noticed. The SDK's own timeout setting was ignored in this
 state. A daemon thread means an abandoned call can never keep the process alive.
+
+### D49. Last fixes from the Phase 4 exit runs (2026-10-04)
+
+**Decision.**
+- The compiler keeps only the identifier in every name the model writes (Flash Lite
+  leaked JSON punctuation into names, for example `amount},{fact:`), then validates.
+- A create's key may not consist only of internal ids (`id`, `*_id`): those are
+  assigned by the system or point to a parent record (a payable keyed by `vendor_id`
+  alone matched the vendor's older payable).
+- Unchanged checks on the records the task itself writes are dropped by the compiler,
+  not fatal; validation still refuses them as a backstop.
+- A commit that names the message deliverable outside `notify` is told to use
+  `notify`, not that it is outside the contract.
+- The run is set to `AWAITING_APPROVAL` before the `during_approval` crash point, so a
+  worker that dies while waiting leaves the right status.
+- A run that stops before `finish` (budget, escalation) still has its checks
+  evaluated for the receipt, under "evaluated when the run stopped"; the status does
+  not change.
+- Disconnects from the model API are retried whatever exception type carries them.
+
+**Why.** Each came from a live run; each has a test.

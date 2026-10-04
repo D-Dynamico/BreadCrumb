@@ -177,6 +177,12 @@ def validate(contract: Contract, spec: ApiSpec) -> list[str]:
             continue
         if not d.key:
             errors.append(f"{where}: a {d.kind} needs a key (the fields that identify it)")
+        elif all(r.field == "id" or r.field.endswith("_id") for r in d.key):
+            errors.append(
+                f"{where}: the key uses only internal ids ({', '.join(r.field for r in d.key)}); "
+                "they are assigned by the system or point to another record, so add the "
+                "record's own reference, such as its number, as the source document states it"
+            )
         elif not any(contract.fact_type(r.fact) in ("id", "email") for r in d.key):
             errors.append(
                 f"{where}: the key must include a value that identifies one record, such as "
@@ -199,6 +205,17 @@ def validate(contract: Contract, spec: ApiSpec) -> list[str]:
             for f in p.fields
             if returned and f not in returned
         )
+    written = {d.lookup_operation for d in contract.deliverables if d.kind != "send"}
+    unchanged = [(f"protected entry {i}", p.lookup_operation)
+                 for i, p in enumerate(contract.protected, 1)]  # fmt: skip
+    unchanged += [("extra check field_unchanged", c.lookup_operation)
+                  for c in contract.extra_checks if c.type == "field_unchanged"]  # fmt: skip
+    for where, operation in unchanged:
+        if operation in written:
+            errors.append(
+                f"{where}: {operation} lists the records this task writes; "
+                "protect records the task must not touch instead"
+            )
     for c in contract.extra_checks:
         if c.type == "judgement":
             errors.append("judgement checks are not supported until Phase 5 (D37)")
