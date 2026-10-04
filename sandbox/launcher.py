@@ -28,9 +28,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sandbox", description="Start the Acme Co. sandbox")
     parser.add_argument("--faults", default="none", choices=faults.PROFILES)
     args = parser.parse_args(argv)
-    if args.faults != "none":
-        print(f"Fault profile {args.faults!r} arrives in Phase 4. Nothing was started.")
-        return 2
     if not db_path().exists():
         print(f"No sandbox database at {db_path()}. Run `uv run tasks seed` first.")
         return 1

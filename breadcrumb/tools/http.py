@@ -39,13 +39,20 @@ class HttpTool:
         self.base_url = base_url.rstrip("/")
         self._headers = {"Authorization": f"Bearer {token}"}
         self._ops: dict[str, Operation] | None = None
+        self._openapi: dict[str, Any] | None = None
+
+    def openapi(self) -> dict[str, Any]:
+        """The API's OpenAPI document, fetched once."""
+        if self._openapi is None:
+            response = httpx.get(f"{self.base_url}/openapi.json", timeout=15)
+            response.raise_for_status()
+            self._openapi = response.json()
+        return self._openapi
 
     def operations(self) -> dict[str, Operation]:
         if self._ops is None:
-            response = httpx.get(f"{self.base_url}/openapi.json", timeout=15)
-            response.raise_for_status()
             ops: dict[str, Operation] = {}
-            for path, methods in response.json().get("paths", {}).items():
+            for path, methods in self.openapi().get("paths", {}).items():
                 for method, spec in methods.items():
                     op_id = spec.get("operationId")
                     if not op_id:

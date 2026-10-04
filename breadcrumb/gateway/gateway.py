@@ -1,24 +1,21 @@
 """The gateway: the only way a commit reaches the world (AGENT_DESIGN.md section 5).
 
-Phase 3 scope: declared commits, the natural-key check, the idempotency key and
-write-ahead journaling. Scope, provenance and risk tiers come with the Phase 4
-contract.
-
-Every create or update must say how it could be found again: its key (the fields
-that identify the record) and an API read operation that lists such records. The
-gateway uses that lookup twice: before dispatch, to skip a record that already
-exists, and on resume, to answer "did this happen?" by looking. The worker states
-it before acting, so the question can be answered later without its memory.
+`breadcrumb.gateway.declare` turns a commit into a declaration against the contract
+(scope, keys from facts, provenance, risk tier). This module then makes it happen
+safely: the natural-key check before anything is sent, a durable approval for tier
+2, write-ahead journaling around the dispatch, and settling by looking whenever the
+outcome is unclear. The lookup used before dispatch is the one used on resume, so
+"does this already exist" is asked one way before and after (D31, D38).
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from breadcrumb.gateway.declare import Declaration, GatewayRefusal
 from breadcrumb.journal.journal import Entry, Journal
 from breadcrumb.journal.machine import (
     IN_FLIGHT,
@@ -30,23 +27,11 @@ from breadcrumb.journal.machine import (
 )
 from breadcrumb.runs.crash import CrashPoints
 
-KINDS = ("create", "update", "other")
+__all__ = ["Committed", "Declaration", "Fired", "Gateway", "GatewayRefusal"]
+
 Lookup = Callable[[dict[str, Any]], list[dict[str, Any]]]
-
-
-class GatewayRefusal(Exception):
-    """The commit was not declared well enough to be made safely; shown to the model."""
-
-
-@dataclass(frozen=True)
-class Declaration:
-    action: str
-    kind: str  # create, update, send or other
-    description: str
-    key: dict[str, Any]
-    values: dict[str, Any]
-    lookup: dict[str, Any] | None
-    idempotency_key: str
+# Blocks until the requester decides on this entry's diff: (approved, reason).
+Approver = Callable[[Entry, Declaration], tuple[bool, str]]
 
 
 @dataclass
@@ -79,84 +64,22 @@ class Settlement:
     escalate: str = ""
 
 
-def _json_object(raw: object, name: str) -> dict[str, Any]:
-    if raw is None or raw == "":
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    try:
-        value = json.loads(str(raw))
-    except json.JSONDecodeError as exc:
-        raise GatewayRefusal(f"{name} is not valid JSON: {exc}") from exc
-    if not isinstance(value, dict):
-        raise GatewayRefusal(f"{name} must be a JSON object")
-    return value
-
-
-def _idempotency_key(*parts: object) -> str:
-    text = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
-    return "bc-" + hashlib.sha256(text.encode()).hexdigest()[:20]
-
-
-def declaration_from(
-    action: str,
-    args: dict[str, Any],
-    *,
-    run_id: str,
-    reference: str,
-    channel: str,
-    step: int = 0,
-) -> Declaration:
-    """Read what a commit action declares about its effect."""
-    if action == "notify":
-        # One message to the requester per run: the reference token finds it again.
-        key = {"channel": channel, "ref": reference}
-        text = " ".join(str(args.get("message", "")).split())
-        return Declaration(
-            action,
-            "send",
-            f"post to #{channel}: {text[:120]}",
-            key,
-            {},
-            {"source": "notify"},
-            _idempotency_key(run_id, "send", "notify", key),
-        )
-    kind = str(args.get("effect") or "other")
-    if kind not in KINDS:
-        raise GatewayRefusal(f"effect must be one of {', '.join(KINDS)}")
-    key = _json_object(args.get("key_json"), "key_json")
-    values = _json_object(args.get("values_json"), "values_json")
-    operation = str(args.get("lookup_operation") or "").strip()
-    lookup = None
-    if operation:
-        params = _json_object(args.get("lookup_params_json"), "lookup_params_json")
-        lookup = {"source": "api", "operation": operation, "params": params}
-    if kind in ("create", "update"):
-        if not key:
-            raise GatewayRefusal(
-                f"an {kind} must name its record: give key_json, the fields and values "
-                "that identify it, named as the API's read operation names them"
-            )
-        if lookup is None:
-            raise GatewayRefusal(
-                f"an {kind} must say how to find its record again: give lookup_operation, "
-                "an API read operation that lists such records"
-            )
-    description = str(args.get("description") or "").strip()
-    if key:
-        identity: tuple[object, ...] = (run_id, kind, operation, key)
-        if kind == "update":
-            identity = (*identity, values)
-    else:
-        identity = (run_id, kind, action, step, description)
-    return Declaration(action, kind, description, key, values, lookup, _idempotency_key(*identity))
+def _deny(_entry: Entry, _decl: Declaration) -> tuple[bool, str]:
+    return False, "no one can approve here"
 
 
 class Gateway:
-    def __init__(self, journal: Journal, lookup: Lookup, crash: CrashPoints | None = None) -> None:
+    def __init__(
+        self,
+        journal: Journal,
+        lookup: Lookup,
+        crash: CrashPoints | None = None,
+        approver: Approver = _deny,
+    ) -> None:
         self.journal = journal
         self.lookup = lookup
         self.crash = crash or CrashPoints("")
+        self.approver = approver
 
     # -- looking ------------------------------------------------------------------------
     def _look(
@@ -230,6 +153,10 @@ class Gateway:
             )
         if entry is not None and entry.state is State.CONFLICT:
             return Committed(False, "Not done.", entry, escalate=_question(entry))
+        if entry is not None and entry.state is State.REJECTED:
+            return Committed(
+                False, f"Not done: the user rejected this earlier ({entry.note}).", entry
+            )
         if entry is None:
             entry = Entry.new(
                 run_id=self.journal.run_id,
@@ -243,7 +170,18 @@ class Gateway:
                 idempotency_key=decl.idempotency_key,
             )
 
-        if decl.lookup is not None:
+        refused = self._check_first(entry, decl)
+        if refused is not None:
+            return refused
+        if decl.tier == 2:
+            if entry.state is not State.AWAITING_APPROVAL:
+                self.journal.record(entry, State.AWAITING_APPROVAL, decl.tier_reason, step_no=step)
+            approved, reason = self.approver(entry, decl)
+            if not approved:
+                self.journal.record(entry, State.REJECTED, reason or "rejected")
+                answer = f" The user said: {reason}" if reason else ""
+                return Committed(False, f"Not done: the user rejected this.{answer}", entry)
+            # The world may have changed while waiting: check the key again.
             refused = self._check_first(entry, decl)
             if refused is not None:
                 return refused
@@ -281,14 +219,13 @@ class Gateway:
 
     def _check_first(self, entry: Entry, decl: Declaration) -> Committed | None:
         """The natural-key check before dispatch. Returns a result if nothing should be sent."""
-        assert decl.lookup is not None
         try:
             verdict = self._look(decl.kind, decl.key, decl.values, decl.lookup, strict=True)
         except Unanswerable as exc:
             return Committed(
                 False,
                 f"Not done: could not check first whether it already exists ({exc}). "
-                "Fix lookup_operation, lookup_params_json or key_json.",
+                "Try again; if it keeps failing, explain in finish.",
             )
         if decl.kind == "update":
             if verdict.found != 1:

@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     notify_channel: str = "finance-ops"
 
     approval_threshold_inr: int = 100000
+    # Email recipients outside this domain need the requester's approval (tier 2).
+    internal_email_domain: str = "acme.test"
+    # How often a waiting worker checks runs.db for an approval or an answer.
+    wait_poll_seconds: float = 2.0
     max_steps: int = 60
     max_wall_seconds: int = 900
     max_tokens: int = 400000

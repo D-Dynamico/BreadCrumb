@@ -39,14 +39,18 @@ class Check:
     message: str = ""
 
 
-def fingerprint(source: str, observation: str) -> str:
-    """What the worker was looking at, reduced to what matters for "same state"."""
+def fingerprint(source: str, observation: str, files: tuple[str, ...] = ()) -> str:
+    """What the worker was looking at, reduced to what matters for "same state".
+
+    `files` are the downloaded files: a download changes what the worker can do next
+    even when the page looks the same."""
     if source.startswith("browser"):
         lines = observation.splitlines()
         url = next((ln[5:] for ln in lines if ln.startswith("URL: ")), "")
         state = [urlsplit(url).path, *(ln.strip() for ln in lines if _STATEFUL.search(ln))]
     else:
         state = [source, observation]
+    state.append("files: " + ", ".join(files))
     return hashlib.sha256("\n".join(state).encode()).hexdigest()[:16]
 
 

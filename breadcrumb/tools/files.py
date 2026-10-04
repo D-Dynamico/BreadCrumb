@@ -22,6 +22,11 @@ class FilesTool:
     def __init__(self, folder: Path) -> None:
         self.folder = folder
 
+    def names(self) -> tuple[str, ...]:
+        if not self.folder.exists():
+            return ()
+        return tuple(sorted(p.name for p in self.folder.glob("*") if p.is_file()))
+
     def list(self) -> str:
         files = (
             sorted(p.name for p in self.folder.glob("*") if p.is_file())

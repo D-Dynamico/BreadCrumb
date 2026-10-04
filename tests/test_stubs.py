@@ -7,6 +7,6 @@ import pytest
 from tasks import main as tasks_main
 
 
-@pytest.mark.parametrize("argv", [["sandbox", "--faults", "flaky"], ["ui"], ["eval"]])
+@pytest.mark.parametrize("argv", [["ui"], ["eval"]])
 def test_task_stubs_exit_with_error(argv: list[str]) -> None:
     assert tasks_main(argv) == 2

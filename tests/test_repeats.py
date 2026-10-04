@@ -78,6 +78,11 @@ def test_browser_fingerprint_is_url_path_and_interactive_elements_with_values() 
     assert page == fingerprint("browser x", FORM.replace("localhost:8103", "127.0.0.1:8103"))
 
 
+def test_a_new_download_changes_the_state() -> None:
+    before = fingerprint("browser x", FORM)
+    assert before != fingerprint("browser x", FORM, ("a.pdf",))
+
+
 def test_file_and_api_fingerprint_is_source_and_content() -> None:
     assert fingerprint("file a.pdf", "p1 L1: x") == fingerprint("file a.pdf", "p1 L1: x")
     assert fingerprint("file a.pdf", "p1 L1: x") != fingerprint("file b.pdf", "p1 L1: x")

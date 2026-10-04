@@ -6,11 +6,11 @@ rules decide; the gateway and reconcile feed them observations.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
+
+from breadcrumb.ledger.values import same_value
 
 
 class State(StrEnum):
@@ -29,7 +29,8 @@ class State(StrEnum):
 _ALLOWED: dict[State, frozenset[State]] = {
     # A create the duplicate check finds already there goes straight to CONFIRMED.
     State.PROPOSED: frozenset({State.AWAITING_APPROVAL, State.INTENDED, State.CONFIRMED}),
-    State.AWAITING_APPROVAL: frozenset({State.INTENDED, State.REJECTED}),
+    # After approval the natural key is checked again and may already be there.
+    State.AWAITING_APPROVAL: frozenset({State.INTENDED, State.REJECTED, State.CONFIRMED}),
     # DISPATCHED is written before the tool fires, so an INTENDED entry found on
     # resume was never sent.
     State.INTENDED: frozenset({State.DISPATCHED, State.NOT_APPLIED}),
@@ -74,27 +75,6 @@ def classify_outcome(statuses: list[int | None]) -> tuple[State, str]:
     if refused:
         return State.FAILED, f"refused with HTTP {refused[0]}"
     return State.CONFIRMED, f"accepted with HTTP {statuses[-1]}"
-
-
-_NUMBER = re.compile(r"^[₹\s]*-?[\d,]*\d(\.\d+)?\s*$")
-
-
-def _number(value: object) -> Decimal | None:
-    text = str(value)
-    if not _NUMBER.match(text):
-        return None
-    try:
-        return Decimal(text.replace("₹", "").replace(",", "").strip())
-    except InvalidOperation:
-        return None
-
-
-def same_value(a: object, b: object) -> bool:
-    """Equal as the apps would mean it: numbers by value, text ignoring case and spacing."""
-    na, nb = _number(a), _number(b)
-    if na is not None and nb is not None:
-        return na == nb
-    return " ".join(str(a).split()).casefold() == " ".join(str(b).split()).casefold()
 
 
 @dataclass

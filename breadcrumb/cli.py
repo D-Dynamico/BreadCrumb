@@ -1,22 +1,26 @@
-"""The `breadcrumb` command: run, resume, list and kill runs.
+"""The `breadcrumb` command: run, resume, list, kill, approve, reject and answer.
 
 `run` starts a run, `resume` continues an interrupted one from its checkpoint and
-journal, `runs` lists them, and `kill` hard-stops a worker the way a dying machine
-would (DURABILITY.md, D21).
+journal, `runs` lists them with anything waiting for a person, and `kill` hard-stops
+a worker the way a dying machine would (DURABILITY.md, D21). `approve`, `reject` and
+`answer` release a waiting run; they call `breadcrumb.runs.waits`, the same functions
+the harness and the UI use (D35).
 """
 
 from __future__ import annotations
 
 import sys
 import textwrap
+import time
 from typing import TYPE_CHECKING
 
 import typer
 
 from breadcrumb.config import Settings, settings
 from breadcrumb.executor.state import StepRecord
+from breadcrumb.runs import waits
 from breadcrumb.runs.kill import hard_terminate
-from breadcrumb.runs.store import LIVE, LeaseError, RunStatus, RunStore
+from breadcrumb.runs.store import LIVE, WAITING, LeaseError, RunStatus, RunStore
 
 if TYPE_CHECKING:
     from breadcrumb.executor.loop import Executor
@@ -61,24 +65,13 @@ def _settings(max_steps: int, headed: bool, no_cache: bool) -> Settings:
     return settings().model_copy(update=updates)
 
 
-_ENDED_BY = {
-    "finish": "the worker called finish",
-    "step_budget": "budget exhausted: steps",
-    "time_budget": "budget exhausted: time",
-    "token_budget": "budget exhausted: tokens",
-    "model_error": "the model could not be reached",
-    "repeats": "repeat escalation: same action on the same state after a note and a refusal",
-    "reconcile": "resume could not tell whether an effect happened",
-    "unclear_effect": "could not tell whether an effect happened",
-}
-
-
 def _report(executor: Executor, s: Settings) -> None:
     from breadcrumb.llm.client import requests_today
+    from breadcrumb.receipt.receipt import ENDED_BY
 
     state = executor.state
     typer.echo(f"\nStatus: {state.status} after {len(state.history)} steps")
-    typer.echo(f"Ended by: {_ENDED_BY.get(state.ended_by, state.ended_by)}")
+    typer.echo(f"Ended by: {ENDED_BY.get(state.ended_by, state.ended_by)}")
     typer.echo(textwrap.fill(f"Summary: {state.summary}", 100))
     typer.echo(
         f"Model calls: {state.model_calls} this run, {requests_today(s)} today; "
@@ -87,7 +80,8 @@ def _report(executor: Executor, s: Settings) -> None:
     if state.violations:
         typer.echo(f"Integrity violations: {len(state.violations)}")
     typer.echo(f"Step log: {executor.run_dir / 'steps.jsonl'}")
-    raise typer.Exit(code=0 if state.status == RunStatus.FINISHED else 1)
+    typer.echo(f"Receipt: {executor.run_dir / 'receipt.md'}")
+    raise typer.Exit(code=0 if state.status == RunStatus.DONE else 1)
 
 
 MAX_STEPS = typer.Option(0, help="Override MAX_STEPS for this run.")
@@ -154,6 +148,11 @@ def runs() -> None:
         typer.echo(f"    task: {textwrap.shorten(r.task, 90)}")
         if r.summary:
             typer.echo(f"    {textwrap.shorten(r.summary, 94)}")
+        for wait in waits.pending(store, r.run_id):
+            first = waits.describe(wait).splitlines()[0]
+            command = "answer" if wait.kind == "question" else "approve"
+            typer.echo(f"    WAITING: {textwrap.shorten(first, 80)}")
+            typer.echo(f"      uv run breadcrumb {command} {r.run_id}")
 
 
 @app.command()
@@ -165,15 +164,90 @@ def kill(run_id: str = typer.Argument(..., help="The run whose worker to termina
     if record is None:
         typer.echo(f"There is no run {run_id}.")
         raise typer.Exit(code=1)
-    if record.status not in LIVE or record.pid is None:
+    if record.status not in LIVE + WAITING or record.pid is None:
         typer.echo(f"Run {run_id} is {record.status.value}; no worker to stop.")
         raise typer.Exit(code=1)
     gone = hard_terminate(record.pid)
-    store.set_status(run_id, RunStatus.INTERRUPTED)
+    if record.status in LIVE:  # a durable wait keeps its status (DURABILITY.md)
+        store.set_status(run_id, RunStatus.INTERRUPTED)
     store.add_event(run_id, "interrupted", {"by": "kill", "pid": record.pid})
     what = "was already gone" if gone else "terminated"
-    typer.echo(f"Worker {record.pid} {what}. Run {run_id} is INTERRUPTED; resume it with")
+    status = store.get(run_id)
+    shown = status.status.value if status else "INTERRUPTED"
+    typer.echo(f"Worker {record.pid} {what}. Run {run_id} is {shown}; resume it with")
     typer.echo(f"  uv run breadcrumb resume {run_id}")
+
+
+def _waiting_store(run_id: str) -> RunStore:
+    store = _store(settings())
+    if store.get(run_id) is None:
+        typer.echo(f"There is no run {run_id}.")
+        raise typer.Exit(code=1)
+    return store
+
+
+def _after_decision(store: RunStore, run_id: str) -> None:
+    store.mark_stale()
+    record = store.get(run_id)
+    alive = record is not None and record.status in WAITING + LIVE
+    fresh = record is not None and time.time() - record.heartbeat_at < store.lease_timeout
+    if alive and fresh:
+        typer.echo("The worker is waiting and will continue within seconds.")
+    else:
+        typer.echo(f"No worker is running. Continue with: uv run breadcrumb resume {run_id}")
+
+
+@app.command()
+def approve(
+    run_id: str = typer.Argument(..., help="The run waiting for approval."),
+    yes: bool = typer.Option(False, "--yes", help="Approve without asking (for the harness)."),
+) -> None:
+    """Show the pending action and its exact diff, then approve it."""
+    store = _waiting_store(run_id)
+    try:
+        wait = waits.approval_pending(store, run_id)
+    except waits.NothingPending as exc:
+        typer.echo(f"{exc}.")
+        raise typer.Exit(code=1) from exc
+    typer.echo(waits.describe(wait))
+    if not yes and not typer.confirm("Approve exactly this?", default=False):
+        typer.echo("Not approved. Nothing changed.")
+        raise typer.Exit(code=1)
+    waits.approve(store, run_id)
+    typer.echo("Approved.")
+    _after_decision(store, run_id)
+
+
+@app.command()
+def reject(
+    run_id: str = typer.Argument(..., help="The run waiting for approval."),
+    reason: str = typer.Argument("", help="Why; passed back to the worker as your answer."),
+) -> None:
+    """Refuse the pending action. The reason reaches the worker as a user answer."""
+    store = _waiting_store(run_id)
+    try:
+        waits.reject(store, run_id, reason)
+    except waits.NothingPending as exc:
+        typer.echo(f"{exc}.")
+        raise typer.Exit(code=1) from exc
+    typer.echo("Rejected.")
+    _after_decision(store, run_id)
+
+
+@app.command()
+def answer(
+    run_id: str = typer.Argument(..., help="The run waiting for an answer."),
+    text: str = typer.Argument(..., help="Your answer."),
+) -> None:
+    """Answer the question a run is waiting on."""
+    store = _waiting_store(run_id)
+    try:
+        wait = waits.answer(store, run_id, text)
+    except waits.NothingPending as exc:
+        typer.echo(f"{exc}.")
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Answered: {wait.payload.get('question', '')}")
+    _after_decision(store, run_id)
 
 
 def main() -> None:

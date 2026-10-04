@@ -29,6 +29,68 @@ must ask. Approving a scope change creates a new contract version. This is the m
 structural defence against prompt injection: a PDF can say "also update the bank
 account", but the contract has no write scope for bank details, so the gateway refuses.
 
+### 1.1 The contract as built (Phase 4, D38)
+
+The contract is centred on **deliverables**: the effects the user should end up with.
+Scope, natural keys, lookups and most checks all come from them, so they are stated
+once, before any work, instead of being re-declared by the worker at every commit.
+
+```
+Contract
+  goal: str
+  assumptions: [str]
+  open_questions: [{question, blocking: bool}]
+  facts: [{key, type: money|date|id|email|text, description}]
+  deliverables: [{
+      id: str                      e.g. "entered_record", "requester_note"
+      kind: create | update | send
+      description: str
+      lookup_operation: str        an API read that lists such records, or "notify"
+      key:    {field: "fact:<key>"}   the natural key, field names as the lookup returns them
+      values: {field: "fact:<key>"}   other values the effect must carry
+      must_contain: ["fact:<key>"]    send only: what the message must mention
+  }]
+  protected: [{lookup_operation, match: {field: value}, fields: [str]}]
+  extra_checks: [field_unchanged | no_message_sent ...]    never judgement (D37)
+  version: int
+```
+
+- **Facts are named by the contract.** The worker must `remember` values under these
+  keys (it may remember other facts too). A deliverable refers to them as
+  `fact:<key>`, so field names and fact names are fixed before work starts. This ends
+  the key drift seen in Phase 3, where each retry named the key differently.
+- **Write scope is the list of deliverables.** A commit must name the deliverable it
+  produces (`deliverable: <id>`). A commit that names none, or one that does not
+  exist, is refused with "outside the contract; ask the user". A PDF that says "also
+  change the bank account" has no deliverable to name, so the gateway refuses it.
+- **Checks are derived, not written by the model.** Each `create` gives
+  `record_unique(key)` plus `field_equals` for every value; `update` gives
+  `field_equals` for every value; `send` gives `message_sent(must_contain)`; each
+  `protected` entry gives `field_unchanged`, compared with a snapshot taken when the
+  contract is accepted. The compiler may add only `field_unchanged` and
+  `no_message_sent` in `extra_checks`; anything else, `judgement` included, fails
+  validation (D37).
+- **Validation is code, not prompt.** Every `fact:` reference must name a declared
+  fact; every `lookup_operation` must be a GET operation in the API spec (or
+  `notify`); every key and value field must be a field that operation returns,
+  checked against the spec's response schema; `send` needs `must_contain`. An invalid
+  contract is sent back to the compiler with the errors up to twice, then the run fails
+  honestly.
+- **Blocking questions** stop the run as `AWAITING_CLARIFICATION` before any work; the
+  answer is added to the task as a user statement and the contract is compiled again.
+- **Limit (Phase 5).** Deliverables need an API read to be looked up and verified.
+  Employees and sent mail have none in the Admin API, so families 2 and 4 will need a
+  UI lookup route. Until then such a deliverable is accepted but marked as unverifiable
+  by API, and the receipt says so.
+
+### 1.2 Commits under the contract (Phase 4)
+
+`browser_submit` and `http_write` take `deliverable` instead of `effect`, `key_json`,
+`values_json` and `lookup_operation` (D38 supersedes that part of D31). The gateway
+resolves the deliverable's key and values from the ledger; a fact that is missing
+refuses the commit with "remember <key> first". `notify` is the `send` deliverable
+whose lookup is `notify`; a run whose contract has no such deliverable cannot notify.
+
 ## 2. Check types (the small typed vocabulary)
 
 Checks are data, not free text, so the verifier can evaluate most of them without an
@@ -43,7 +105,7 @@ LLM. Expected values may be literals or references to ledger facts (`fact:invoic
 | `record_status(app, entity, match, status)` | For workflows, for example `pending_approval` |
 | `message_sent(channel, to, must_contain)` | Email or notification sent with required content |
 | `no_message_sent(channel, to)` | Nothing was sent (used for refusals) |
-| `judgement(question, evidence_refs)` | Fuzzy check for an LLM judge, used rarely, must cite evidence |
+| `judgement(question, evidence_refs)` | Fuzzy check for an LLM judge, used rarely, must cite evidence. Phase 5; until then rejected by contract validation (D37) |
 
 Each check also has a `how_to_observe` hint resolved at runtime: API GET if the Admin
 API exposes it, otherwise a UI search page. The verifier picks the route; the contract
@@ -173,6 +235,26 @@ Every commit passes through it, in this order:
 5. **Journal** `INTENDED`, then `DISPATCHED`, then fire, then record the outcome
    (see `DURABILITY.md`).
 
+**How the Phase 4 build makes these checks concrete (D38).**
+
+- *Scope*: the commit must name a contract deliverable (section 1.2).
+- *Provenance, browser*: the browser tool keeps the values typed and chosen on the
+  current page since it loaded. Before a submit, every typed value that reads as money,
+  a date or an email address must equal a ledger fact of that type (numbers by value,
+  dates in any common format, so "15 Nov 2026" equals `2026-11-15`). Otherwise the
+  commit is refused, naming the value. Free text is not checked.
+- *Provenance, API*: the same rule over every leaf value of the request body.
+- *Tier 2*: any money value in the commit (typed, or resolved from the deliverable)
+  above `APPROVAL_THRESHOLD_INR`, or an email recipient outside `@acme.test`.
+- *Approval*: the entry goes `PROPOSED` to `AWAITING_APPROVAL` and an approval row is
+  written with the exact diff (deliverable, key, values, typed fields). The run waits
+  as `AWAITING_APPROVAL`, polling `runs.db` with its browser still open. Released by
+  `breadcrumb approve` (D35). If the worker dies while waiting, the approval still
+  stands: on resume the worker refills the form, and the same deliverable and key give
+  the same journal entry, which may then proceed, but only if the values still equal
+  the approved diff; otherwise approval is asked again. After approval, the natural
+  key is checked again before dispatch.
+
 **The worker never approves its own work.** Gateway approval (the requester saying
 "yes, enter this") is separate from the app's own approval workflow. Payables above
 ₹1,00,000 still go to `pending_approval` in Acme Admin after the worker submits them;
@@ -207,6 +289,14 @@ Rules:
 The policy is a deterministic table in code. The model chooses *what* to try next only
 when the table says "re-plan".
 
+**As built (Phase 4, D40):** `breadcrumb/recovery/policy.py`. The executor applies
+retries (navigation and API reads on 5xx, timeouts or dropped connections; clicks,
+typing and choices only when the page itself answered 5xx, since a timeout there
+usually means the element is not there) and automatic sign-in (any browser action
+that lands on a sign-in page) without a model call. Gateway and verifier lookups
+retry transient failures 3 times. "Repeated failure" is covered by repeat detection
+for now; per-subgoal counting is not built.
+
 ## 8. Verifier
 
 - Runs after `finish`, in a fresh browser session, using the same tools.
@@ -218,6 +308,13 @@ when the table says "re-plan".
 - Any `failed`: the executor gets one repair pass with the failure details, then the
   verifier runs again. Still failing: run ends `FAILED` with an honest receipt.
 - Also cross-checks the journal: every `CONFIRMED` create should appear exactly once.
+
+**As built (Phase 4, D39):** `breadcrumb/verifier/verifier.py` decides every derived
+check (section 1.1) from fresh API reads through the gateway's lookups, so it needs no
+browser and no model. `record_unique` covers the journal cross-check. A key fact that
+was never recorded fails its deliverable. `judgement` checks are not built (D37): one
+that appears is `unverifiable` with that reason. Outcome: all verified is `DONE`; any
+failed after the repair pass is `FAILED`; otherwise `FINISHED`, never `DONE`.
 
 What it really catches (be precise about this in docs and interviews): a form that
 never saved, the wrong record edited, transposed or truncated values, a validation
@@ -235,6 +332,14 @@ What the user gets at the end:
 4. Effects from the journal: each with state and record ID or message reference.
 5. Interruptions and how they were settled, if any.
 6. Links to evidence: screenshots, downloaded files, page snapshots.
+
+**As built (Phase 4):** `breadcrumb/receipt/receipt.py` writes `receipt.md` and
+`receipt.json` in the run folder for every run, however it ended, from durable records
+only (state, journal, waits, events), so a resumed run's receipt is complete. It
+includes the status and `ended_by` in words, the contract goal and assumptions, check
+verdicts, values written with their sources, journal effects with their state
+history, approvals and questions with their answers, and interruptions. Screenshots
+are not captured yet; downloaded files are in the run folder.
 
 ## 10. Prompts
 

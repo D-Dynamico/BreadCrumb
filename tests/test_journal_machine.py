@@ -14,8 +14,8 @@ from breadcrumb.journal.machine import (
     check_transition,
     classify_outcome,
     decide,
-    same_value,
 )
+from breadcrumb.ledger.values import same_value
 
 PAYABLES = [
     {"id": 1, "vendor_name": "North Co", "invoice_no": "INV-1", "amount": "100.00"},

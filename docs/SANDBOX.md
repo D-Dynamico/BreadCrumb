@@ -113,6 +113,14 @@ Selected with `uv run tasks sandbox --faults <profile>`. Seeded and reproducible
 | `drift` | Button labels change ("Save" becomes "Submit entry"), field order changes, a "What's new" modal appears once |
 | `chaos` | All of the above at lower rates |
 
+As built (Phase 4, D42): `sandbox/faults/__init__.py`, seeded by `FAULT_SEED`
+(default 1). `flaky` never refuses a sign-in post. `session` expires a session after
+25 requests and, once per app, right after the first successful form save (cookie
+sessions only, not the API). `drift` relabels buttons (for example "Save payable"
+becomes "Submit entry") and shows a "What's new" panel once; field order is not
+changed (cut under D36). `chaos` uses 5% errors and slow requests, expiry after 50
+requests, the after-save expiry and the drift changes.
+
 Fault middleware sits in front of each app. It must never corrupt data or make a write
 silently fail while reporting success; it only changes what the client sees and when.
 The one exception is deliberate and documented: in `session`, a write can succeed while

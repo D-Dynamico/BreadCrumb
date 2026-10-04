@@ -104,3 +104,12 @@ def test_a_confirmed_commit_resets_the_count(
     _strike(executor)
     executor._act(3, "notify", {"message": "hi", "why": "tell"}, Check(Response.OK))
     assert (executor.repeats.strikes == 0) is reset
+
+
+def test_repeat_messages_name_the_systems_not_opened_yet(executor: Executor) -> None:
+    executor.state.visited = [executor.settings.apps[0].name]
+    noted = executor._with_unvisited(Check(Response.NOTE, "NOTE: again."))
+    others = [a.name for a in executor.settings.apps[1:]]
+    assert all(name in noted.message for name in others)
+    assert executor.settings.apps[0].name not in noted.message.split("yet in this run:")[1]
+    assert executor._with_unvisited(Check(Response.OK)).message == ""

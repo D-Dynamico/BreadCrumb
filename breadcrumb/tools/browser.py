@@ -67,6 +67,9 @@ class _State:
     declared: str | None = None
     writes: list[WriteRecord] = field(default_factory=list)
     pending: dict[Request, WriteRecord] = field(default_factory=dict)
+    # Values typed or chosen on the current page since it loaded: (field, value).
+    typed: list[tuple[str, str]] = field(default_factory=list)
+    page_status: int | None = None  # HTTP status of the current page's document
 
 
 def _indent(line: str) -> int:
@@ -161,6 +164,7 @@ class BrowserTool:
         self._page = context.new_page()
         self._page.on("request", self._watch_request)
         self._page.on("response", self._watch_response)
+        self._page.on("framenavigated", self._on_navigated)
         self._page.on("download", self._on_download)
 
     def _on_download(self, download: Download) -> None:
@@ -196,6 +200,40 @@ class BrowserTool:
         record = self._state.pending.pop(response.request, None)
         if record is not None:
             record.status = response.status
+        request = response.request
+        main = self._page.main_frame if self._page is not None else None
+        if request.is_navigation_request() and request.frame == main:
+            self._state.page_status = response.status
+
+    def _on_navigated(self, frame: Any) -> None:
+        if self._page is not None and frame == self._page.main_frame:
+            self._state.typed = []  # a new page: nothing typed on it yet
+
+    @property
+    def typed(self) -> list[tuple[str, str]]:
+        return list(self._state.typed)
+
+    @property
+    def page_status(self) -> int | None:
+        return self._state.page_status
+
+    @property
+    def on_sign_in_page(self) -> bool:
+        """A password field is showing: the app wants a login."""
+        if self._page is None:
+            return False
+        try:
+            return self._page.locator("input[type=password]").count() > 0
+        except PlaywrightError:
+            return False
+
+    def reload(self) -> str:
+        """Load the current page again (a GET). Used to retry a page that failed."""
+
+        def again() -> None:
+            self.page.reload()
+
+        return self._do("reloading the page", again)
 
     @contextmanager
     def _declared(self, what: str) -> Iterator[None]:
@@ -278,7 +316,15 @@ class BrowserTool:
 
     def type(self, element: int, text: str) -> str:
         target = self._locate(element)
-        return self._do(f"typing into [{element}]", lambda: target.fill(text))
+        page = self._do(f"typing into [{element}]", lambda: target.fill(text))
+        self._note_typed(element, text)
+        return page
+
+    def _note_typed(self, element: int, value: str) -> None:
+        ref = self._state.elements.get(element)
+        label = ref.describe() if ref else f"[{element}]"
+        self._state.typed = [(k, v) for k, v in self._state.typed if k != label]
+        self._state.typed.append((label, value))
 
     def select(self, element: int, option: str) -> str:
         target = self._locate(element)
@@ -289,7 +335,9 @@ class BrowserTool:
             except PlaywrightError:
                 target.select_option(value=option)
 
-        return self._do(f"selecting {option!r} in [{element}]", choose)
+        page = self._do(f"selecting {option!r} in [{element}]", choose)
+        self._note_typed(element, option)
+        return page
 
     def submit(self, element: int) -> str:
         """Click a control that saves or sends something: a declared write."""

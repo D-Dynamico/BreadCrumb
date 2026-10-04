@@ -21,18 +21,26 @@ from typing import Any
 
 
 class RunStatus(StrEnum):
+    COMPILING = "COMPILING"
+    AWAITING_CLARIFICATION = "AWAITING_CLARIFICATION"
     RUNNING = "RUNNING"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
     INTERRUPTED = "INTERRUPTED"
     RECONCILING = "RECONCILING"
-    # "The worker says it is done". Becomes VERIFYING then DONE once the Phase 4
-    # verifier exists.
+    VERIFYING = "VERIFYING"
+    DONE = "DONE"  # every contract check verified
+    # The worker says it is done, but some checks could not be verified (for example
+    # no API read exists for them). Never shown as DONE.
     FINISHED = "FINISHED"
     FAILED = "FAILED"
     ESCALATED = "ESCALATED"
 
 
-LIVE = (RunStatus.RUNNING, RunStatus.RECONCILING)
-RESUMABLE = (RunStatus.INTERRUPTED, *LIVE)
+# A worker is active: a stale heartbeat means it died, so the run is INTERRUPTED.
+LIVE = (RunStatus.COMPILING, RunStatus.RUNNING, RunStatus.RECONCILING, RunStatus.VERIFYING)
+# Durable waits: they survive the worker dying, so they keep their status.
+WAITING = (RunStatus.AWAITING_APPROVAL, RunStatus.AWAITING_CLARIFICATION)
+RESUMABLE = (RunStatus.INTERRUPTED, *LIVE, *WAITING)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -59,6 +67,17 @@ CREATE TABLE IF NOT EXISTS events (
     at TEXT NOT NULL,
     kind TEXT NOT NULL,
     detail_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS waits (
+    wait_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    kind TEXT NOT NULL,
+    entry_id TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS journal (
     entry_id TEXT PRIMARY KEY,
@@ -170,8 +189,8 @@ class RunStore:
         with self.transaction() as conn:
             changed = conn.execute(
                 "UPDATE runs SET heartbeat_at = ? WHERE run_id = ? AND pid = ?"
-                " AND status IN (?, ?)",
-                (now, run_id, pid, *LIVE),
+                f" AND status IN ({_marks(LIVE + WAITING)})",
+                (now, run_id, pid, *LIVE, *WAITING),
             ).rowcount
         return changed == 1
 
@@ -183,7 +202,8 @@ class RunStore:
             stale = [
                 r["run_id"]
                 for r in conn.execute(
-                    "SELECT run_id FROM runs WHERE status IN (?, ?) AND heartbeat_at < ?",
+                    f"SELECT run_id FROM runs WHERE status IN ({_marks(LIVE)})"
+                    " AND heartbeat_at < ?",
                     (*LIVE, cutoff),
                 )
             ]
@@ -207,7 +227,12 @@ class RunStore:
                 raise LeaseError(
                     f"run {run_id} is {run.status.value}; only interrupted runs resume"
                 )
-            if run.status in LIVE and now - run.heartbeat_at < self.lease_timeout:
+            if run.status in LIVE + WAITING and now - run.heartbeat_at < self.lease_timeout:
+                if run.status in WAITING:
+                    raise LeaseError(
+                        f"run {run_id} is {run.status.value} in worker {run.pid}; answer it "
+                        "with `breadcrumb approve`, `reject` or `answer` and it continues"
+                    )
                 raise LeaseError(
                     f"run {run_id} is still running (worker {run.pid}); "
                     "stop it first with `breadcrumb kill`"
@@ -245,12 +270,82 @@ class RunStore:
         with self.transaction() as conn:
             _event(conn, run_id, kind, detail, time.time())
 
+    def add_wait(
+        self, wait_id: str, run_id: str, kind: str, payload: dict[str, Any], entry_id: str = ""
+    ) -> Wait:
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT INTO waits (wait_id, run_id, kind, entry_id, payload_json, status,"
+                " created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                (wait_id, run_id, kind, entry_id, json.dumps(payload, ensure_ascii=False),
+                 iso()),
+            )  # fmt: skip
+            _event(conn, run_id, f"{kind}_requested", {"wait_id": wait_id, **payload}, time.time())
+        got = self.get_wait(wait_id)
+        assert got is not None
+        return got
+
+    def get_wait(self, wait_id: str) -> Wait | None:
+        with self.transaction() as conn:
+            row = conn.execute("SELECT * FROM waits WHERE wait_id = ?", (wait_id,)).fetchone()
+        return _wait(row) if row else None
+
+    def waits(self, run_id: str, status: str | None = None) -> list[Wait]:
+        with self.transaction() as conn:
+            rows = conn.execute(
+                "SELECT * FROM waits WHERE run_id = ? AND (? IS NULL OR status = ?)"
+                " ORDER BY created_at, rowid",
+                (run_id, status, status),
+            ).fetchall()
+        return [_wait(r) for r in rows]
+
+    def decide_wait(self, wait_id: str, status: str, answer: str = "") -> Wait:
+        """Record a decision once. A wait already decided keeps its first decision."""
+        with self.transaction() as conn:
+            row = conn.execute("SELECT * FROM waits WHERE wait_id = ?", (wait_id,)).fetchone()
+            if row is None:
+                raise LookupError(f"there is no wait {wait_id}")
+            if row["status"] == "pending":
+                conn.execute(
+                    "UPDATE waits SET status = ?, answer = ?, decided_at = ? WHERE wait_id = ?",
+                    (status, answer, iso(), wait_id),
+                )
+                _event(conn, row["run_id"], f"{row['kind']}_{status}",
+                       {"wait_id": wait_id, "answer": answer}, time.time())  # fmt: skip
+        got = self.get_wait(wait_id)
+        assert got is not None
+        return got
+
     def events(self, run_id: str) -> list[dict[str, Any]]:
         with self.transaction() as conn:
             rows = conn.execute(
                 "SELECT at, kind, detail_json FROM events WHERE run_id = ? ORDER BY id", (run_id,)
             ).fetchall()
         return [{"at": r["at"], "kind": r["kind"], **json.loads(r["detail_json"])} for r in rows]
+
+
+# -- durable waits: approvals and questions (D35) -----------------------------------
+@dataclass(frozen=True)
+class Wait:
+    wait_id: str
+    run_id: str
+    kind: str  # approval or question
+    entry_id: str  # the journal entry an approval releases
+    payload: dict[str, Any]  # approval: the exact diff; question: {"question": ...}
+    status: str  # pending, approved, rejected, answered
+    answer: str
+    created_at: str
+    decided_at: str
+
+
+def _wait(row: sqlite3.Row) -> Wait:
+    data = dict(row)
+    data["payload"] = json.loads(data.pop("payload_json"))
+    return Wait(**data)
+
+
+def _marks(values: tuple[object, ...]) -> str:
+    return ", ".join("?" for _ in values)
 
 
 def _event(

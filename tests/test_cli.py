@@ -93,3 +93,65 @@ def test_the_prompt_shows_the_journal_and_the_interruption() -> None:
     assert "never repeat it" in prompt
     assert journal[0] in prompt
     assert "# You were interrupted" in prompt
+
+
+# -- durable waits through the CLI (D35) ----------------------------------------------
+def _waiting(s: Settings, kind: str = "approval") -> RunStore:
+    store = _store(s)
+    store.create_run("r1", "t", "BC-AAAA", pid=1, now=time.time() - 600)
+    status = RunStatus.AWAITING_APPROVAL if kind == "approval" else RunStatus.AWAITING_CLARIFICATION
+    store.set_status("r1", status)
+    payload = (
+        {"description": "save it", "key": {"invoice_no": "X-1"}, "values": {"amount": "5.00"}}
+        if kind == "approval"
+        else {"question": "Which one?"}
+    )
+    store.add_wait("w1", "r1", kind, payload, "je-1")
+    return store
+
+
+def test_approve_shows_the_diff_and_releases_exactly_that_wait(temp_settings: Settings) -> None:
+    store = _waiting(temp_settings)
+    refused = CliRunner().invoke(cli.app, ["approve", "r1"], input="n\n")
+    assert refused.exit_code == 1 and "invoice_no = X-1" in refused.output
+    assert store.get_wait("w1").status == "pending"  # type: ignore[union-attr]
+    result = CliRunner().invoke(cli.app, ["approve", "r1", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert store.get_wait("w1").status == "approved"  # type: ignore[union-attr]
+    assert "resume r1" in result.output  # its worker is gone (stale heartbeat)
+    assert CliRunner().invoke(cli.app, ["approve", "r1", "--yes"]).exit_code == 1
+
+
+def test_reject_passes_the_reason_back(temp_settings: Settings) -> None:
+    store = _waiting(temp_settings)
+    assert CliRunner().invoke(cli.app, ["reject", "r1", "wrong vendor"]).exit_code == 0
+    wait = store.get_wait("w1")
+    assert wait is not None and (wait.status, wait.answer) == ("rejected", "wrong vendor")
+
+
+def test_answer_and_runs_show_pending_questions(temp_settings: Settings) -> None:
+    store = _waiting(temp_settings, kind="question")
+    listed = CliRunner().invoke(cli.app, ["runs"])
+    assert "WAITING: Question: Which one?" in listed.output
+    assert "AWAITING_CLARIFICATION" in listed.output  # a durable wait is not INTERRUPTED
+    assert CliRunner().invoke(cli.app, ["approve", "r1", "--yes"]).exit_code == 1
+    assert CliRunner().invoke(cli.app, ["answer", "r1", "the second"]).exit_code == 0
+    wait = store.get_wait("w1")
+    assert wait is not None and (wait.status, wait.answer) == ("answered", "the second")
+
+
+def test_the_prompt_says_what_is_typed_but_not_saved() -> None:
+    state = RunState(run_id="r1", task="t", reference="BC-AAAA")
+    typed = [('textbox "Amount"', "18927.20")]
+    prompt = build_prompt(state, [], "", "http://x/new", 4, 60, None, typed)
+    assert "Typed on this page and not saved yet" in prompt and "18927.20" in prompt
+    assert "browser_view" in prompt
+
+
+def test_the_last_file_read_stays_visible_after_the_page_changes() -> None:
+    state = RunState(run_id="r1", task="t", reference="BC-AAAA")
+    state.last_file = "a.pdf\np1 L7: Due: 15 Nov 2026"
+    state.observation_source = "browser http://x/new"
+    assert "# Last file read: a.pdf" in build_prompt(state, [], "", "", 4, 60)
+    state.observation_source = "file a.pdf"  # already the observation: not shown twice
+    assert "# Last file read" not in build_prompt(state, [], "", "", 4, 60)

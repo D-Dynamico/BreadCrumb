@@ -5,6 +5,7 @@ Off unless `CRASH_POINT` is set. It ends the worker process abruptly with
 has not already committed. That is the point: it behaves like a machine dying.
 
 `after_dispatch` fires on the first commit; `after_dispatch:2` on the second.
+`during_approval` fires while the worker waits for its first approval.
 Resumed runs never crash, so one injected crash means one interruption.
 """
 
@@ -14,7 +15,7 @@ import os
 import sys
 from collections.abc import Callable
 
-POINTS = ("before_intended", "after_intended", "after_dispatch")
+POINTS = ("before_intended", "after_intended", "after_dispatch", "during_approval")
 CRASH_EXIT_CODE = 75
 
 
@@ -32,6 +33,7 @@ class CrashPoints:
         self.point = point
         self.nth = int(nth) if nth else 1
         self.commits = 0
+        self.approvals = 0
         self.exit_hook = exit_hook
 
     def next_commit(self) -> None:
@@ -40,3 +42,9 @@ class CrashPoints:
     def reached(self, point: str) -> None:
         if self.point == point and self.commits == self.nth:
             self.exit_hook(point)
+
+    def waiting_for_approval(self) -> None:
+        """`during_approval` fires once the n-th approval request is on disk."""
+        self.approvals += 1
+        if self.point == "during_approval" and self.approvals == self.nth:
+            self.exit_hook("during_approval")

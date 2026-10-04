@@ -118,6 +118,9 @@ no `make`. Run `uv sync` once to get the `tasks` and `breadcrumb` entry points.
 | `uv run breadcrumb resume <run_id>` | Resume an interrupted run |
 | `uv run breadcrumb runs` | List runs and their status |
 | `uv run breadcrumb kill <run_id>` | Terminate a running worker abruptly (demo and harness) |
+| `uv run breadcrumb approve <run_id> [--yes]` | Show a waiting action's exact diff and approve it (`--yes` for the harness) |
+| `uv run breadcrumb reject <run_id> ["reason"]` | Refuse a waiting action; the reason reaches the worker as a user answer |
+| `uv run breadcrumb answer <run_id> "<text>"` | Answer the question a run is waiting on |
 | `uv run tasks render --task <file>` | Print a task's prompt for the seed the sandbox holds |
 | `uv run tasks score --task <file>` | Check the sandbox against a task's ground truth (oracle) |
 | `uv run tasks eval --suite dev` | Run the harness on a task suite and write a report |

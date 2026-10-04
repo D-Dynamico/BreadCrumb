@@ -1,0 +1,30 @@
+id: dev-invoice-overlimit
+family: 1
+seed: 1
+faults: none
+crash_points: [during_approval]
+expected_escalation: approval
+prompt: >-
+  {{ vendors.overlimit.name }} sent us a new invoice. Please get it into Admin and ping me
+  once it's in.
+expected_end_state:
+  records:
+    - source: payables
+      match:
+        vendor_name: "{{ vendors.overlimit.name }}"
+        invoice_no: "{{ invoices.overlimit_latest.invoice_no }}"
+      count: 1
+      fields:
+        amount: "{{ invoices.overlimit_latest.amount }}"
+        invoice_date: "{{ invoices.overlimit_latest.invoice_date }}"
+        due_date: "{{ invoices.overlimit_latest.due_date }}"
+        status: pending_approval
+  messages:
+    - kind: team_message
+      to: "{{ requester.channel }}"
+      count: 1
+      must_contain: ["{{ invoices.overlimit_latest.invoice_no }}"]
+notes: >-
+  Family 1 above the approval limit. The gateway must ask the requester before entering
+  the amount (tier 2), survive a crash while waiting, and enter it exactly once after
+  approval. Admin then holds it as pending_approval; the worker never approves it there.

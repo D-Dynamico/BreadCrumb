@@ -392,3 +392,207 @@ adding up; resetting per session keeps re-observing after a resume from counting
 accepting the variance (one loop costs a whole run's requests); a 30-step cap for the
 exit runs (a legitimate crash plus resume needs 30 to 32 steps, since a resume must
 log in again and refill the form).
+
+### D35. Approvals and answers come in through the CLI, one shared path (2026-10-04)
+
+**Decision.** Until the Phase 5 UI exists, a waiting run is released from the command
+line: `breadcrumb approve <run_id>` prints the pending action and its exact diff and
+asks for confirmation (`--yes` skips the prompt, for the harness);
+`breadcrumb reject <run_id> ["reason"]` refuses it, and the reason reaches the worker
+as a user answer; `breadcrumb answer <run_id> "<text>"` answers a clarification.
+`breadcrumb runs` shows pending approvals and questions. The CLI, the harness and the
+Phase 5 UI all call the same functions in `breadcrumb/`; none has its own path to
+`runs.db`.
+
+**Why.** The Phase 4 exit needs an approval that survives a restart, before any UI
+exists. One shared implementation means the durable-wait behavior tested through the
+CLI is the behavior the UI will have. Showing the exact diff before approval keeps
+"approve" meaning "I saw what will be written", not a blind yes.
+
+**Rejected.** A harness-only approval hook (a second path that could drift from the
+real one); editing `runs.db` by hand in tests.
+
+### D36. The `drift` fault profile is built last (2026-10-04)
+
+**Decision.** Build `flaky`, `session` and `chaos` first and `drift` last. If only
+part of `drift` fits, build the renamed button label first, then field order, then
+the "What's new" modal. If time runs short, cut it, as the cut line already allows.
+
+**Why.** `drift` is third on the cut line. The renamed label is the part that best
+shows elements found by role and name (D29) surviving a change, so it comes first.
+
+### D37. No `judgement` checks until Phase 5 (2026-10-04)
+
+**Decision.** The Phase 4 contract compiler may not emit `judgement` checks. This is
+enforced when the contract is validated, not only by the prompt: a contract that
+contains one is rejected. If one ever reaches the verifier anyway, it is marked
+`unverifiable`, and the receipt says it was not evaluated because LLM-judged checks
+are not built yet.
+
+**Why.** Family 1 needs none, and every check in Phase 4 can then be decided without
+a model, which keeps the verifier deterministic and cheap. Enforcing it in validation
+means a model that ignores the prompt cannot slip in a fuzzy check that would
+silently pass.
+
+### D38. The contract's deliverables drive scope, keys and checks (2026-10-04)
+
+**Decision.** The contract lists deliverables (create, update or send), each with an
+API lookup, a natural key and values written as references to named facts
+(`fact:invoice_no`). A commit names the deliverable it produces; the gateway takes the
+key, the values and the lookup from the contract and the ledger. Write scope is the
+list of deliverables. Checks are derived from deliverables and protected entries by
+code; the compiler may only add `field_unchanged` and `no_message_sent`. Every field
+name and operation is validated against the API spec before the run starts.
+Provenance is checked on what is actually typed into a form or sent in a body: money,
+dates and email addresses must equal ledger facts.
+
+This supersedes the per-commit declaration of D31 (`effect`, `key_json`,
+`values_json`, `lookup_operation`). D31's mechanism stays: the natural-key check
+before dispatch and the lookup on reconcile, now fed by the contract.
+
+**Why.** In Phase 3 the worker named the same record's key three ways in one run,
+fragmenting the journal; keys fixed once, before work, cannot drift. Deriving checks
+in code keeps the verifier deterministic and leaves the model no room to write a check
+that trivially passes. Naming a deliverable is also the scope check: an injected
+instruction has nothing to name.
+
+**Rejected.** Letting the compiler write checks freely (a fuzzy or wrong check could
+pass silently); keeping per-commit keys alongside the contract (two sources of truth);
+checking provenance only on declared values (the form could still receive something
+else).
+
+### D39. How a run ends after verification (2026-10-04)
+
+**Decision.** After `finish`, the verifier decides every derived check from fresh
+reads. All verified: `DONE`. Any failed: one repair pass (the failures are shown to
+the worker, which may fix them and call `finish` again), then `FAILED` if any still
+fails. None failed but some unverifiable (no way to read them): `FINISHED`, which is
+never reported as `DONE`, and the receipt lists what could not be checked. A
+deliverable whose key fact was never recorded counts as failed: it cannot exist as
+specified. Every receipt states `ended_by`.
+
+**Why.** "Done" must mean checked (ground rule 3). A separate `FINISHED` keeps the
+honest middle case (families 2 and 4 until a UI lookup exists) from being dressed up
+as either success or failure.
+
+### D40. The executor applies the recovery table itself (2026-10-04)
+
+**Decision.** Transient read failures (5xx pages or API reads, timeouts, dropped
+connections) are retried up to 3 times with backoff, without a model call. Whenever
+a browser action lands on a sign-in page, the worker signs in with the declared
+`login` action and the app returns it to the page, also without a model call; this
+covers first visits as well as expired sessions. A submit that lands on a sign-in
+page is classified `UNKNOWN`, whatever the HTTP status, and settled by looking.
+Gateway and verifier lookups retry transient failures 3 times before giving up as
+unanswerable.
+
+**Why.** The table is deterministic (AGENT_DESIGN.md section 7); spending model calls
+on "try again" or "log in" wastes budget and invites loops. A redirect to a login
+page after a save is exactly the "maybe committed" case: the save may have happened
+before the session died, so only looking can tell.
+
+### D41. Approvals are bound to a journal entry and its sensitive values (2026-10-04)
+
+**Decision.** A tier 2 commit records `AWAITING_APPROVAL` on its journal entry and a
+wait row with the exact diff, then waits in the same process, polling `runs.db`. The
+approval covers that entry and its sensitive content: deliverable, key, values and
+every typed amount, date or email address. If the worker dies and refills the form on
+resume, the same deliverable and key find the same entry, and the earlier approval is
+reused only if the sensitive content is identical; otherwise the requester is asked
+again. A rejection ends the entry as `REJECTED` (never retried) and the reason
+reaches the worker as a user fact. `breadcrumb kill` on a waiting worker leaves the
+run in its waiting status, since a durable wait survives the worker.
+
+**Why.** "Approving releases exactly that journal entry, nothing broader"
+(DURABILITY.md). Comparing only the sensitive content, not the worker's wording, lets
+a resumed run proceed without asking twice, while any change to what would be written
+needs a new yes.
+
+### D42. Fault profile details (2026-10-04)
+
+**Decision.** `flaky`: 15% of requests answer 503 before the app sees them, 15% are
+delayed 2 to 4 seconds; sign-in posts are never refused. `session`: a session dies
+after 25 requests, and once per app process right after the first successful form
+save (cookie sessions only; API writes are not affected). `drift`: button labels
+change (for example "Save payable" becomes "Submit entry") and a "What's new" panel
+appears once; field order is not changed (D36 allowed cutting it). `chaos`: 5% errors,
+5% slow, sessions die after 50 requests, the after-save expiry, and the drift
+changes. All seeded by `FAULT_SEED`.
+
+**Why.** Each profile exercises one recovery path: retries, sign-in and the "maybe
+committed" save, and finding elements by role and name after a relabel. Refusing a
+sign-in post would only test retrying a login, at the cost of noisy runs.
+
+### D43. Contract compilation details (2026-10-04)
+
+**Decision.** Lookups must be list operations (a GET with no path parameter), since
+only those can find a record by its fields. An invalid contract goes back to the
+model with the errors up to twice (Flash Lite sometimes garbles a field name).
+Blocking questions are asked up to twice, each answer
+added to the task as a user statement; still blocking after that escalates. Records
+for protected fields are snapshotted when the contract is accepted (the whole list,
+since the identifying facts are not known yet) and compared at verification.
+
+**Why.** The first live contract named `getVendor`, which needs an id it cannot know.
+Snapshotting the whole list is cheap in this sandbox and avoids a second pass once the
+facts are known.
+
+### D44. A `browser_view` action, and typed values shown every turn (2026-10-04)
+
+**Decision.** Add `browser_view`, which shows the current page again without
+reloading it, and show in every prompt the values typed on the current page that are
+not saved yet. The prompt says that reading a file or calling the API leaves the page
+as it was, and that opening a form's URL again empties it.
+
+**Why.** Reading a file replaces what the worker sees, so it reopened the form to see
+it again, which emptied what it had typed. This loop cost a whole run in Phase 3 and
+caused the first `flaky` run in Phase 4 to escalate on repeats. It is a gap in the
+action space, not a task detail: any form filled from a document has it. This was an
+open item in the Phase 3 note marked "ask first"; with the user away and the Phase 4
+exit blocked by it, it was decided here.
+
+**Rejected.** Keeping the page and the file in one observation (doubles the prompt
+on every turn); relying on repeat detection alone (it stops the loop, it does not
+prevent it).
+
+### D45. The last file read stays in view (2026-10-04)
+
+**Decision.** The text of the most recently read file (up to 3,000 characters) stays
+in the prompt, fenced as untrusted data, until another file is read. The `files_read`
+outcome reminds the worker to put the values it needs in `remember`.
+
+**Why.** With `browser_view` (D44) the worker stopped emptying forms, but Flash Lite
+still read a document and moved on without recording the value it needed, then read
+it again, and repeat detection ended the run. Keeping the document visible removes
+the reason to read it again; recording facts with sources stays required for any
+value written (provenance), so the safety rule is unchanged.
+
+**Rejected.** Extracting fields from documents in code (task-specific); a longer
+repeat window (it would only delay the escalation).
+
+### D46. Contract rules learned from live runs (2026-10-04)
+
+**Decision.** Validation now also requires: a create's key includes a fact of type
+`id` or `email` (a value that identifies one record, not only a name); protected
+entries and `field_unchanged` checks have a non-empty match; a `send` always uses the
+`notify` lookup (set by the model class, not left to the compiler). The compiler
+prompt says that anything findable by looking (whether a record exists, its id, which
+document is latest) is never a blocking question.
+
+**Why.** Live contracts keyed a payable by the vendor name alone (the gateway then
+correctly refused to create a second record "with the same key"), added an unchanged
+check that matched every record, gave the message deliverable another lookup, and
+marked "does this vendor exist?" as blocking, which parked a run waiting for an
+answer. Each is now caught in code or prevented, without naming any task.
+
+### D47. Repeat notes name the systems not opened yet; downloads change the state (2026-10-04)
+
+**Decision.** When repeat detection notes or refuses an action, the message also lists
+the systems the worker has not opened in the browser during this run. The state
+fingerprint now includes the names of downloaded files. After an automatic sign-in,
+recovery continues, so a page that then answers 5xx is retried.
+
+**Why.** Under `session`, the worker circled between the vendor portal and the API for
+21 steps and never opened the inbox; the list of unopened systems is a fact about the
+run, not a task hint. Under `flaky`, a download that failed and then succeeded left
+the page looking the same, so reading the file again was wrongly flagged as a repeat.

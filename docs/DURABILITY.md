@@ -34,7 +34,7 @@ LLM calls are not replayed; see "Why checkpoints, not replay" below.
 | `AWAITING_APPROVAL` | A tier 2 action waits for the user. Durable: survives restarts |
 | `INTERRUPTED` | Found `RUNNING` with an expired lease on startup, or killed. Resumable |
 | `RECONCILING` | Resume in progress, settling ambiguous journal entries |
-| `FINISHED` | Phase 3 stand-in until the verifier exists: the worker called `finish` |
+| `FINISHED` | The worker finished and no check failed, but some checks could not be verified (no way to read them). Never reported as `DONE` (D39) |
 | `VERIFYING` | Verifier evaluating contract checks |
 | `DONE` | All checks passed |
 | `FAILED` | Could not complete. Receipt explains where and why |
@@ -162,6 +162,14 @@ is marked `INTERRUPTED`. This prevents two workers acting on one run, and it is 
 killed process is detected without any special shutdown hook.
 
 ## Durable waits
+
+As built in Phase 4 (D35, D41): approvals and questions are rows in the `waits` table
+of `runs.db`. A waiting worker keeps its lease and heartbeat and polls the table; the
+run's status is `AWAITING_APPROVAL` or `AWAITING_CLARIFICATION`. `breadcrumb approve`,
+`reject` and `answer` write the decision through `breadcrumb.runs.waits`. A waiting
+status is never turned into `INTERRUPTED`: if the worker dies, the run stays waiting,
+the decision can still be made, and `breadcrumb resume` continues it, passing on the
+decision. The `during_approval` crash point fires once the approval row is on disk.
 
 Approvals and clarifications are stored in `runs.db`, not held in memory. A run in
 `AWAITING_APPROVAL` can survive a restart and continue the next day when the user
